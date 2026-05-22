@@ -1,0 +1,11 @@
+[package]
+name = "rust-axum-image-bbs"
+version = "0.1.0"
+edition = "2021"
+description = "旧PHP画像掲示板を Rust + axum で再実装する学習用プロジェクト"
+
+[dependencies]
+# axum 本体（HTTP ルーティング・ハンドラ・抽出器を提供する Web フレームワーク）
+axum = "0.7"
+# tokio：axum が依存する非同期ランタイム。"full" は学習用に主要機能を一括有効化
+tokio = { version = "1", features = ["full"] }
