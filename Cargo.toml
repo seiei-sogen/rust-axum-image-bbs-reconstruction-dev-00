@@ -9,3 +9,14 @@ description = "旧PHP画像掲示板を Rust + axum で再実装する学習用�
 axum = "0.7"
 # tokio：axum が依存する非同期ランタイム。"full" は学習用に主要機能を一括有効化
 tokio = { version = "1", features = ["full"] }
+# tracing：Rust 標準的な構造化ログ・トレーシングファサード。
+#   println! より情報量が多く、ログレベル（debug/info/warn/error）・スパン・フィールドを扱える。
+#   本番環境でのログ集約・フィルタリングを見越して最初から導入する。
+tracing = "0.1"
+# tracing-subscriber：tracing イベントを実際に出力する「subscriber」の実装集。
+#   features = ["env-filter"] を有効にすると RUST_LOG 環境変数でレベルを動的に切り替えられる。
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# tower-http：Tower ミドルウェアの HTTP 特化実装集。
+#   features = ["trace"] で TraceLayer が使えるようになり、
+#   axum の Router に .layer() で差し込むだけでリクエスト/レスポンスを自動ログ出力できる。
+tower-http = { version = "0.5", features = ["trace"] }

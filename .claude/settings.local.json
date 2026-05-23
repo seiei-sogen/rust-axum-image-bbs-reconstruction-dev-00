@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p /home/agir_wsl/develop/ghq_repos/github.com/seiei-sogen/rust-axum-image-bbs-reconstruction-dev-00/docs/tumigidoc/rust-axum-image-bbs/spec /home/agir_wsl/develop/ghq_repos/github.com/seiei-sogen/rust-axum-image-bbs-reconstruction-dev-00/docs/tumigidoc/rust-axum-image-bbs/design)",
+      "Bash(cp /home/agir_wsl/develop/ghq_repos/github.com/seiei-sogen/rust-axum-image-bbs-reconstruction-dev-00/docs/spec/rust-axum-image-bbs/*.md /home/agir_wsl/develop/ghq_repos/github.com/seiei-sogen/rust-axum-image-bbs-reconstruction-dev-00/docs/tumigidoc/rust-axum-image-bbs/spec/)",
+      "Bash(cargo --version)",
+      "Bash(rustc --version)",
+      "Bash(cargo build *)",
+      "Bash(curl -sS -i http://localhost:3000/)",
+      "Bash(pkill -f \"target/debug/rust-axum-image-bbs\")",
+      "Bash(kill 75592)",
+      "Bash(pkill -9 -f rust-axum-image-bbs)",
+      "Bash(curl -sS --max-time 2 http://localhost:3000/)",
+      "Bash(just --version)",
+      "Bash(just --list)",
+      "Bash(just check *)",
+      "Bash(grep -nE 'です。|ます。|です$|ます$|でしょう|ましょう|ですが|ますが|でした|ました' articles/rust-axum-imgbbs-01-init.md)",
+      "Bash(cargo run *)",
+      "Bash(echo \"PID: $!\")",
+      "Read(//tmp/**)",
+      "Bash(curl -s http://localhost:3000/)",
+      "Bash(pkill -f rust-axum-image-bbs)",
+      "Bash(echo \"PID: $!\" sleep 3 cat /tmp/server_debug.log)",
+      "Bash(kill %1)",
+      "Bash(awk '{print $2}')",
+      "Bash(xargs kill *)",
+      "Bash(where git *)",
+      "PowerShell(& \"C:\\\\Program Files\\\\Git\\\\cmd\\\\git.exe\" config --global --get-all safe.directory 2>&1)",
+      "Bash(cargo fmt *)",
+      "Bash(cargo clippy *)",
+      "Bash(git add *)"
+    ]
+  }
+}
