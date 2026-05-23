@@ -28,7 +28,11 @@
       "PowerShell(& \"C:\\\\Program Files\\\\Git\\\\cmd\\\\git.exe\" config --global --get-all safe.directory 2>&1)",
       "Bash(cargo fmt *)",
       "Bash(cargo clippy *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs",
+      "Bash(git commit *)",
+      "Bash(git push *)"
     ]
   }
 }
