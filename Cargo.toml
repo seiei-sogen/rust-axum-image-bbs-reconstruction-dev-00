@@ -20,3 +20,17 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 #   features = ["trace"] で TraceLayer が使えるようになり、
 #   axum の Router に .layer() で差し込むだけでリクエスト/レスポンスを自動ログ出力できる。
 tower-http = { version = "0.5", features = ["trace"] }
+# sqlx：Rust 向けの非同期対応 SQL クライアントライブラリ。
+#   マクロを使えばクエリをコンパイル時に検証できる（今回は実行時クエリとして使用）。
+#   有効にする features の意味:
+#     runtime-tokio  … 非同期ランタイムに tokio を使う（axum と同じランタイムを共有）
+#     sqlite         … SQLite ドライバを有効化（他に postgres / mysql なども選べる）
+#     macros         … query!() / query_as!() などのコンパイル時検証マクロを使えるようにする
+#     migrate        … sqlx::migrate!() マクロと MigrateDatabase trait を有効化する
+#     chrono         … SQLite の TEXT 日時を Rust の chrono::DateTime 型へ自動変換する
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "macros", "migrate", "chrono"] }
+# chrono：Rust の日付・時刻を扱う標準的なライブラリ。
+#   sqlx の chrono feature と組み合わせることで、DB から取得した日時文字列を
+#   NaiveDateTime や DateTime<Utc> 型として受け取れるようになる。
+#   features = ["serde"] を有効にすると、JSON シリアライズ/デシリアライズも可能になる。
+chrono = { version = "0.4", features = ["serde"] }

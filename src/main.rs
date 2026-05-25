@@ -17,8 +17,21 @@
 //!   `tracing::info!` などを使うと RUST_LOG 環境変数一つでレベル切替ができる。
 //! - `TraceLayer::new_for_http()` を Router にかぶせると、リクエストの開始・終了・
 //!   ステータスコードが自動でログ出力される。ハンドラ側でロギングを書く必要がない。
+//!
+//! TASK-0003 追加メモ（SQLite + sqlx 接続とマイグレーション）:
+//! - `SqlitePoolOptions` は接続プール（複数の DB 接続をまとめて管理する仕組み）を構築する。
+//!   プールを使うと、リクエストごとに接続を確立・切断するコストを省いて効率よく DB を使える。
+//! - `SqliteConnectOptions::from_str(&url)` は DATABASE_URL 文字列を解析して接続設定を作る。
+//!   `?` 演算子により、パース失敗時は即座にエラーを呼び出し元へ返す（early return）。
+//! - `create_if_missing(true)` は SQLite ファイルが存在しない場合に自動で作成する設定。
+//!   これがないと、ファイルが無いときに `unable to open database file` エラーになる。
+//! - `sqlx::migrate!("./migrations")` はコンパイル時マクロで、指定ディレクトリの SQL ファイルを
+//!   バイナリに埋め込む。`.run(&pool).await?` で起動時に未適用のマイグレーションだけを実行する。
 
 use axum::{routing::get, Router};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::SqlitePool;
+use std::str::FromStr;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
@@ -44,6 +57,80 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .unwrap_or_else(|_| EnvFilter::new("info,tower_http=debug")),
         )
         .init();
+
+    // ---------- DB 接続プールの構築 ----------
+    //
+    // DATABASE_URL 環境変数からデータベースのパスを取得する。
+    // 環境変数が未設定の場合は "sqlite://data/app.db" をデフォルトとして使う。
+    // .env ファイルから読み込む場合は dotenv クレートを使うが、今回はシンプルに std::env で取得する。
+    //
+    // 学習メモ:
+    // - `std::env::var("DATABASE_URL")` は Ok(String) か Err(VarError) を返す。
+    //   `.unwrap_or_else(|_| ...)` でエラー時のデフォルト値を文字列リテラルで指定している。
+    let database_url =
+        std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://data/app.db".to_string());
+
+    // SQLite ファイル本体は次の `create_if_missing(true)` で自動生成されるが、
+    // **親ディレクトリは作成されない**ため、`data/` が存在しないと
+    // `unable to open database file` で起動に失敗する（よくハマるポイント）。
+    // ここで `sqlite://` プレフィックスを除いたパスから親を取り出し、念のため作成しておく。
+    //
+    // 学習メモ:
+    // - `if let Some(x) = expr` パターン: Option が Some の時だけブロックを実行する糖衣構文。
+    //   `sqlite::memory:` のようなインメモリ URL は strip_prefix が None を返すのでスキップされる。
+    // - `std::fs::create_dir_all` は既存ディレクトリに対しても成功する（冪等）。
+    if let Some(file_path) = database_url.strip_prefix("sqlite://") {
+        if let Some(parent) = std::path::Path::new(file_path).parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
+    }
+
+    // SqliteConnectOptions は接続の詳細設定を表す構造体。
+    // `from_str(&database_url)` で URL 文字列をパースして設定を作成する。
+    //
+    // 学習メモ:
+    // - `?` 演算子: Result が Err のとき、即座に main() から return Err(...) する。
+    //   ここでは URL のパースに失敗した場合にエラーを伝播させる。
+    // - `.create_if_missing(true)`: SQLite ファイル（data/app.db）が存在しない場合に
+    //   自動でファイルを作成する。開発環境で DB ファイルを事前に用意しなくてよくなる。
+    let connect_options = SqliteConnectOptions::from_str(&database_url)?.create_if_missing(true);
+
+    // SqlitePoolOptions で接続プールを設定・構築する。
+    //
+    // 学習メモ:
+    // - 接続プール（Connection Pool）とは: DB との接続はコストが高い。
+    //   プールは事前に複数の接続を確立して使い回す仕組みで、パフォーマンスが向上する。
+    // - `max_connections(5)`: 同時に保持できる接続の上限。SQLite はシングルファイルなので
+    //   大きくする必要はない。5 本あれば並列リクエストの処理には十分。
+    // - `.connect_with(connect_options).await?`: 非同期で接続を試みる。
+    //   `await` は非同期処理の完了を待つキーワード（tokio ランタイム上で動作する）。
+    //   失敗時は `?` でエラーを伝播する。
+    //
+    // 型注釈 `SqlitePool` は `sqlx::Pool<sqlx::Sqlite>` のエイリアス。
+    // 次タスク TASK-0004 で `AppState { db_pool: SqlitePool, ... }` として持ち回す予定のため、
+    // ここで型名を見える化しておく（型推論に任せても動くが、学習者向けに明示）。
+    let pool: SqlitePool = SqlitePoolOptions::new()
+        .max_connections(5)
+        .connect_with(connect_options)
+        .await?;
+
+    // マイグレーションを実行する。
+    //
+    // 学習メモ:
+    // - `sqlx::migrate!("./migrations")` はコンパイル時マクロ。
+    //   パスは `CARGO_MANIFEST_DIR`（= Cargo.toml がある場所）からの相対で解釈されるため、
+    //   アプリ実行時のカレントディレクトリに依存しない。
+    //   SQL ファイルはビルド時にバイナリへ埋め込まれるので、本番では migrations/ ディレクトリを
+    //   配布する必要がない（バイナリ単体で完結する）。
+    // - `.run(&pool).await?` は未適用のマイグレーションファイルだけを VERSION 順に実行する。
+    //   sqlx は `_sqlx_migrations` テーブルで適用済みを管理するため冪等に動作する。
+    sqlx::migrate!("./migrations").run(&pool).await?;
+    tracing::info!("migrations applied");
+
+    // 注: pool は現時点ではここで使わない。
+    // 次タスク（TASK-0004）で AppState 構造体に格納し、ハンドラへ渡す予定。
 
     // ---------- ルーター組み立て ----------
     //

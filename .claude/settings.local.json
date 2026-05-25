@@ -32,7 +32,19 @@
       "mcp__context7__resolve-library-id",
       "mcp__context7__query-docs",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(cargo check *)",
+      "Bash(tee /tmp/cargo_run_1.log)",
+      "Bash([ -f \"$OUTPUT_FILE\" ])",
+      "Bash(break)",
+      "Bash(sqlite3 /home/agir_wsl/develop/ghq_repos/github.com/seiei-sogen/rust-axum-image-bbs-reconstruction-dev-00/data/app.db \".schema post\")",
+      "Bash(sqlite3 /home/agir_wsl/develop/ghq_repos/github.com/seiei-sogen/rust-axum-image-bbs-reconstruction-dev-00/data/app.db \".tables\")",
+      "Bash(pkill -f \"rust-axum-image-bbs\")",
+      "Bash(pkill -f \"rust_axum_image_bbs\")",
+      "Bash(pkill -f \"target/debug/rust\")",
+      "Bash(tee /tmp/cargo_run_2.log)",
+      "Bash(sqlite3 data/app.db \".tables\")",
+      "Bash(DATABASE_URL='sqlite:///nonexistent-dir-xyz123/app.db' timeout 15 cargo run)"
     ]
   }
 }
