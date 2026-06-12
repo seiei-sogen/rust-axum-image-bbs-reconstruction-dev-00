@@ -34,3 +34,6 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "macros", "migr
 #   NaiveDateTime や DateTime<Utc> 型として受け取れるようになる。
 #   features = ["serde"] を有効にすると、JSON シリアライズ/デシリアライズも可能になる。
 chrono = { version = "0.4", features = ["serde"] }
+
+# dotenvy：ローカル開発用の .env を起動時に読み込む。
+dotenvy = "0.15"

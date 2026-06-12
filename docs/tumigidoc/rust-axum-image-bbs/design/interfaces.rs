@@ -170,7 +170,7 @@ pub struct AppConfig {
 impl AppConfig {
     /// デフォルト値（学習用途のためコード内ハードコード可）
     /// 🟡 信頼性: 妥当な初期値
-    pub fn default_for_learning() -> Self {
+    pub fn from_env_or_default() -> Self {
         Self {
             page_size: 20,
             max_image_bytes: 5 * 1024 * 1024,

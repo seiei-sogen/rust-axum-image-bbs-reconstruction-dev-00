@@ -88,4 +88,4 @@ CREATE TABLE post (
 
 - 各ステップごとにZenn記事化できる粒度で進める
 - 例: Hello world → ルーティング → DB接続 → テンプレート → CRUD個別 → 画像アップロード → テスト → Docker
-- Rust初心者がつまずきやすい所有権・借用・`Result<T, E>` `?`演算子・`async/.await`・`Arc<AppState>` などはコメントで補足
+- Rust初心者がつまずきやすい所有権・借用・`Result<T, E>` `?`演算子・`async/.await`・`State<AppState>` などはコメントで補足

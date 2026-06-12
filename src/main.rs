@@ -28,15 +28,23 @@
 //! - `sqlx::migrate!("./migrations")` はコンパイル時マクロで、指定ディレクトリの SQL ファイルを
 //!   バイナリに埋め込む。`.run(&pool).await?` で起動時に未適用のマイグレーションだけを実行する。
 
-use axum::{routing::get, Router};
+mod config;
+mod state;
+
+use axum::{extract::DefaultBodyLimit, extract::State, routing::get, Router};
+use config::AppConfig;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
+use state::AppState;
+use std::path::PathBuf;
 use std::str::FromStr;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv().ok();
+
     // ---------- ロギング初期化 ----------
     //
     // tracing-subscriber の fmt（フォーマット出力）サブスクライバを初期化する。
@@ -129,8 +137,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     sqlx::migrate!("./migrations").run(&pool).await?;
     tracing::info!("migrations applied");
 
-    // 注: pool は現時点ではここで使わない。
-    // 次タスク（TASK-0004）で AppState 構造体に格納し、ハンドラへ渡す予定。
+    let upload_dir =
+        PathBuf::from(std::env::var("UPLOAD_DIR").unwrap_or_else(|_| "uploads".to_string()));
+    std::fs::create_dir_all(&upload_dir)?;
+
+    let config = AppConfig::from_env_or_default();
+    let max_body_bytes = config.max_image_bytes;
+    let state = AppState {
+        db: pool,
+        upload_dir,
+        config,
+    };
+
+    // AppState は Router::with_state で各ハンドラへ共有する。
 
     // ---------- ルーター組み立て ----------
     //
@@ -145,10 +164,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //   内部の詳細は DEBUG レベルで出るため、tower_http=debug にしておくと見やすい。
     let app: Router = Router::new()
         .route("/", get(root_handler))
-        .layer(TraceLayer::new_for_http());
+        .layer(DefaultBodyLimit::max(max_body_bytes))
+        .layer(TraceLayer::new_for_http())
+        .with_state(state);
 
     // 0.0.0.0:3000 で TCP リスナを開く（WSL からホストアクセスする場合に接続しやすい）
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+    let port: u16 = std::env::var("PORT")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(3000);
+    let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
 
     // 起動時のリスニングアドレスを tracing::info! で出力する。
     // フォーマット・フィルタが他のログと統一されるのが利点（詳細はモジュール冒頭の TASK-0002 メモ参照）。
@@ -164,6 +189,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///
 /// 戻り値は `&'static str`。axum は `IntoResponse` を実装した任意の型を返せるので、
 /// `&'static str` はそのまま `text/plain; charset=utf-8` として返される。
-async fn root_handler() -> &'static str {
+async fn root_handler(State(state): State<AppState>) -> &'static str {
+    tracing::debug!(
+        db_pool = ?state.db,
+        upload_dir = %state.upload_dir.display(),
+        page_size = state.config.page_size,
+        max_image_bytes = state.config.max_image_bytes,
+        allowed_mime = ?state.config.allowed_mime,
+        "root handler received application state"
+    );
+
     "Hello, axum!"
 }

@@ -350,9 +350,9 @@ stateDiagram-v2
     環境変数読込 --> DB接続: SqlitePool::connect
     DB接続 --> マイグレーション: sqlx::migrate!()
     マイグレーション --> AppState構築: { db, upload_dir, config }
-    AppState構築 --> Router構築: with_state(Arc::new(state))
+    AppState構築 --> Router構築: with_state(state)
     Router構築 --> サービング: axum::serve
-    サービング --> サービング: 各リクエストで State<AppState> を Clone (Arc)
+    サービング --> サービング: 各リクエストで State<AppState> を Clone
     サービング --> [*]: SIGINT/SIGTERM
 ```
 

@@ -116,7 +116,7 @@ pub struct AppConfig {
 }
 ```
 
-- `Arc<AppState>` を `Router::with_state()` 経由で共有
+- `AppState` を `Router::with_state()` 経由で共有
 - `Clone` を派生させることで axum の State Extractor から取り出し可能
 
 ## システム構成図 🔵
