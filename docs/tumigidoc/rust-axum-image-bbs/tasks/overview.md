@@ -143,7 +143,7 @@ articles/
 > ページング付き。
 
 - [x] [TASK-0005](TASK-0005.md): Post モデルと Repository(list/count/find) 実装 — TDD, 4h ✅ 完了 (2026-11-17)
-- [ ] [TASK-0006](TASK-0006.md): Askama base.html + index.html 雛形 — DIRECT, 4h
+- [x] [TASK-0006](TASK-0006.md): Askama base.html + index.html 雛形 — DIRECT, 4h ✅ 完了 (2026-11-17)
 - [ ] [TASK-0007](TASK-0007.md): GET / 投稿一覧表示 — TDD, 4h
 - [ ] [TASK-0008](TASK-0008.md): ページネーション実装 — TDD, 4h
 

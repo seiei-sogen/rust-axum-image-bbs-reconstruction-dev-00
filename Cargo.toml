@@ -37,3 +37,10 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # dotenvy：ローカル開発用の .env を起動時に読み込む。
 dotenvy = "0.15"
+# askama：Jinja 風の HTML テンプレートを「コンパイル時に」Rust コードへ変換するテンプレートエンジン。
+#   テンプレートの構文ミスや存在しない変数の参照は cargo build の時点でエラーになる。
+#   拡張子 .html のテンプレートは自動で HTML エスケープされる（XSS 対策）。
+askama = "0.12"
+# askama_axum：Askama のテンプレート構造体に axum の IntoResponse を実装させる連携クレート。
+#   これを入れると、ハンドラはテンプレート構造体をそのまま return するだけで HTML を返せる。
+askama_axum = "0.4"

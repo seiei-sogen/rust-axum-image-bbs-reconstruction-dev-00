@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-4">新規投稿</h1>
+
+<form method="post" action="/posts" enctype="multipart/form-data" class="card card-body mb-4">
+  <div class="mb-3">
+    <label for="title" class="form-label">タイトル</label>
+    <input id="title" name="title" class="form-control" maxlength="50">
+  </div>
+  <div class="mb-3">
+    <label for="text" class="form-label">本文</label>
+    <textarea id="text" name="text" class="form-control" rows="4" maxlength="500"></textarea>
+  </div>
+  <div class="mb-3">
+    <label for="image" class="form-label">画像 (jpg/gif/png, 最大5MB)</label>
+    <input id="image" type="file" name="image" accept="image/jpeg,image/gif,image/png" class="form-control">
+  </div>
+  <button class="btn btn-primary">投稿する</button>
+</form>
+
+<h2 class="h4 mb-3">投稿一覧</h2>
+<p class="text-muted">投稿がまだありません</p>
+{% endblock %}

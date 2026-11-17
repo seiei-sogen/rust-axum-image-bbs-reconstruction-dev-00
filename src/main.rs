@@ -1,7 +1,8 @@
 //! rust-axum-image-bbs アプリケーションのエントリポイント。
 //!
-//! このファイルでは axum サーバを 0.0.0.0:3000 で起動し、ルートパス `/` に
-//! GET リクエストが来たら "Hello, axum!" を返すだけの最小構成を実装する。
+//! このファイルは起動処理だけを担当する:
+//! .env 読み込み → ログ初期化 → DB 接続プール → マイグレーション → AppState → listen。
+//! ルーター（URL とハンドラの対応・ミドルウェア）は `src/lib.rs` の `build_app` で組み立てる。
 //!
 //! 学習メモ:
 //! - `#[tokio::main]` マクロは `main()` を tokio の非同期ランタイムでラップする。
@@ -15,8 +16,7 @@
 //! TASK-0002 追加メモ（tracing / TraceLayer）:
 //! - `println!` は手軽だが、本番・テスト・CI でログレベルを制御しにくい。
 //!   `tracing::info!` などを使うと RUST_LOG 環境変数一つでレベル切替ができる。
-//! - `TraceLayer::new_for_http()` を Router にかぶせると、リクエストの開始・終了・
-//!   ステータスコードが自動でログ出力される。ハンドラ側でロギングを書く必要がない。
+//! - TraceLayer の説明は、ルーターと一緒に `src/lib.rs` へ移した。
 //!
 //! TASK-0003 追加メモ（SQLite + sqlx 接続とマイグレーション）:
 //! - `SqlitePoolOptions` は接続プール（複数の DB 接続をまとめて管理する仕組み）を構築する。
@@ -28,17 +28,13 @@
 //! - `sqlx::migrate!("./migrations")` はコンパイル時マクロで、指定ディレクトリの SQL ファイルを
 //!   バイナリに埋め込む。`.run(&pool).await?` で起動時に未適用のマイグレーションだけを実行する。
 
-mod config;
-mod state;
-
-use axum::{extract::DefaultBodyLimit, extract::State, routing::get, Router};
-use config::AppConfig;
+// ライブラリクレート（src/lib.rs）の公開 API を使う。
+// パッケージ名の `-` はクレート名では `_` に置き換わる（rust-axum-image-bbs → rust_axum_image_bbs）。
+use rust_axum_image_bbs::{build_app, config::AppConfig, state::AppState};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
-use state::AppState;
 use std::path::PathBuf;
 use std::str::FromStr;
-use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -142,31 +138,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::create_dir_all(&upload_dir)?;
 
     let config = AppConfig::from_env_or_default();
-    let max_body_bytes = config.max_image_bytes;
     let state = AppState {
         db: pool,
         upload_dir,
         config,
     };
 
-    // AppState は Router::with_state で各ハンドラへ共有する。
-
-    // ---------- ルーター組み立て ----------
-    //
-    // TraceLayer::new_for_http() は Tower のミドルウェア（Layer）として動作する。
-    // Router に `.layer(...)` で重ねると、すべてのリクエスト/レスポンスが
-    // このレイヤーを通過するたびに tracing スパンが生成されてログが出る。
-    //
-    // 学習メモ:
-    // - axum の `.layer()` は「ミドルウェアを外側から被せる」イメージ。
-    //   複数呼べば複数のレイヤーが積み重なる。
-    // - TraceLayer はリクエスト開始時に INFO ログ、終了時に INFO + ステータスを出す。
-    //   内部の詳細は DEBUG レベルで出るため、tower_http=debug にしておくと見やすい。
-    let app: Router = Router::new()
-        .route("/", get(root_handler))
-        .layer(DefaultBodyLimit::max(max_body_bytes))
-        .layer(TraceLayer::new_for_http())
-        .with_state(state);
+    // ルーターの組み立て（ルート定義・ミドルウェア・with_state）は lib.rs の build_app に任せる。
+    // `state` の所有権は build_app へムーブされる。
+    let app = build_app(state);
 
     // 0.0.0.0:3000 で TCP リスナを開く（WSL からホストアクセスする場合に接続しやすい）
     let port: u16 = std::env::var("PORT")
@@ -183,21 +163,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     axum::serve(listener, app).await?;
 
     Ok(())
-}
-
-/// ルート `/` の GET ハンドラ。固定文字列を返すだけのスタブ。
-///
-/// 戻り値は `&'static str`。axum は `IntoResponse` を実装した任意の型を返せるので、
-/// `&'static str` はそのまま `text/plain; charset=utf-8` として返される。
-async fn root_handler(State(state): State<AppState>) -> &'static str {
-    tracing::debug!(
-        db_pool = ?state.db,
-        upload_dir = %state.upload_dir.display(),
-        page_size = state.config.page_size,
-        max_image_bytes = state.config.max_image_bytes,
-        allowed_mime = ?state.config.allowed_mime,
-        "root handler received application state"
-    );
-
-    "Hello, axum!"
 }
