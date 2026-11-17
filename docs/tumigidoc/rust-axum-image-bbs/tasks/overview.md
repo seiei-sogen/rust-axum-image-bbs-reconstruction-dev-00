@@ -176,7 +176,7 @@ articles/
 
 > ゴール: 統合テスト・Docker 化・README 整備により、読者が手元で再現できる完成形に。
 
-- [ ] [TASK-0017](TASK-0017.md): 統合テスト基盤整備 — TDD, 4h
+- [x] [TASK-0017](TASK-0017.md): 統合テスト基盤整備 — TDD, 4h ✅ 完了 (2026-11-17)
 - [ ] [TASK-0018](TASK-0018.md): 主要機能の統合テスト追加 — TDD, 4h
 - [ ] [TASK-0019](TASK-0019.md): Dockerfile + docker-compose.yml — DIRECT, 4h
 - [ ] [TASK-0020](TASK-0020.md): tracing 構造化ログ仕上げ + README 整備 — DIRECT, 4h

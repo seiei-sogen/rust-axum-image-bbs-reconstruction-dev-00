@@ -46,8 +46,9 @@ fmt-check:
     cargo fmt -- --check
 
 # Lint。警告はエラー扱いにして見逃さないようにする
+# --all-targets で、本体だけでなく tests/ の統合テストやユニットテストも検査する
 lint:
-    cargo clippy -- -D warnings
+    cargo clippy --all-targets -- -D warnings
 
 # 動作確認: サーバが起動している前提で `/` を curl で叩く
 smoke:
