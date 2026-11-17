@@ -89,19 +89,27 @@ impl ValidatedPostForm {
         self.image.as_ref()
     }
 
-    /// 「画像を削除する」チェックボックスが ON だったか（編集画面でのみ使う）。
-    pub fn delete_image(&self) -> bool {
-        self.delete_image
-    }
-
-    /// 編集で、投稿の画像をどうするかを決める。新しい画像があれば差し替え、なければそのまま。
+    /// 編集で、投稿の画像をどうするかを決める（api-endpoints.md「画像の取り扱い」の表そのもの）。
     ///
-    /// 学習メモ: 戻り値の `ImageChange<'_>` の `'_` は「`&self` から借りている」という印。
-    /// `Replace` が持つ画像の参照は、このフォームが生きている間だけ使える。
+    /// | 新しい画像 | 削除チェック | 結果      |
+    /// |------------|--------------|-----------|
+    /// | あり       | どちらでも   | `Replace` |
+    /// | なし       | ON           | `Remove`  |
+    /// | なし       | OFF          | `Keep`    |
+    ///
+    /// 新しい画像と削除チェックが両方あるときは、差し替えを優先する（削除チェックは無視）。
+    /// 画像を選んだ利用者の意図は「この画像にしたい」なので、それを捨てて画像なしにはしない。
+    ///
+    /// 学習メモ:
+    /// - 戻り値の `ImageChange<'_>` の `'_` は「`&self` から借りている」という印。
+    ///   `Replace` が持つ画像の参照は、このフォームが生きている間だけ使える。
+    /// - `match (a, b)` のようにタプルで2つの値を同時に判定できる。`_` は「何でもよい」。
+    ///   上から順に試すので、1行目に当てはまれば削除チェックの値は見ない。
     pub fn image_change(&self) -> ImageChange<'_> {
-        match &self.image {
-            Some(image) => ImageChange::Replace(image),
-            None => ImageChange::Keep,
+        match (&self.image, self.delete_image) {
+            (Some(image), _) => ImageChange::Replace(image),
+            (None, true) => ImageChange::Remove,
+            (None, false) => ImageChange::Keep,
         }
     }
 }
@@ -119,6 +127,8 @@ pub enum ImageChange<'a> {
     Keep,
     /// この画像に差し替える。古い画像ファイルは消す（拡張子が変わる場合も）。
     Replace(&'a ValidatedImage),
+    /// 画像だけを削除する。`image` 列を NULL にし、ファイルも消す（REQ-103）。
+    Remove,
 }
 
 /// 投稿フォームの入力を検証する。
@@ -367,6 +377,28 @@ mod tests {
                 "対応していない画像形式です (jpg/gif/png)",
             ]
         );
+    }
+
+    /// 新しい画像と削除チェックの組み合わせから決まる `ImageChange` を、比べやすい名前で返す。
+    fn change_of(image: Option<Vec<u8>>, delete_image: bool) -> &'static str {
+        let form = validated(&PostFormInput {
+            delete_image,
+            ..input("t", "", image)
+        });
+        match form.image_change() {
+            ImageChange::Keep => "keep",
+            ImageChange::Replace(_) => "replace",
+            ImageChange::Remove => "remove",
+        }
+    }
+
+    #[test]
+    fn image_change_follows_the_new_image_and_the_delete_checkbox() {
+        assert_eq!(change_of(None, false), "keep");
+        assert_eq!(change_of(None, true), "remove");
+        assert_eq!(change_of(Some(PNG_MAGIC.to_vec()), false), "replace");
+        // 両方指定されたら差し替えを優先する（api-endpoints.md）
+        assert_eq!(change_of(Some(PNG_MAGIC.to_vec()), true), "replace");
     }
 
     #[test]

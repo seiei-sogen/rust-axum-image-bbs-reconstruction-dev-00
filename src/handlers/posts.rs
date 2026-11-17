@@ -12,6 +12,7 @@ use serde::Deserialize;
 
 use crate::errors::{AppError, AppResult};
 use crate::handlers::pagination::{paginate, Pagination, PaginationQuery};
+use crate::models::image_ext::ImageExt;
 use crate::repository::post_repo;
 use crate::state::AppState;
 use crate::storage::image_store;
@@ -197,6 +198,9 @@ pub async fn edit_form(State(state): State<AppState>, Path(id): Path<i64>) -> Ap
 /// 1. 新しい画像を保存する。失敗したらここで 500。DB にも古い画像ファイルにもまだ触っていない
 /// 2. 保存できてから、タイトル・本文と `image` 列を更新する
 /// 3. 最後に、拡張子が変わって不要になった古いファイル（`5.jpg` → `5.png` の `5.jpg`）を消す
+///
+/// 画像だけを削除するときも「DB が先、ファイルが後」。先に `image` 列を NULL にしておけば、
+/// ファイルの削除に失敗しても、一覧が消えたファイルを表示しようとすることはない。
 pub async fn edit_submit(
     State(state): State<AppState>,
     Path(id): Path<i64>,
@@ -232,15 +236,26 @@ pub async fn edit_submit(
             let filename = image_store::save_image(&state.upload_dir, id, image).await?;
             post_repo::update(&state.db, id, form.title(), form.text()).await?;
             post_repo::update_image_path(&state.db, id, Some(&filename)).await?;
-            // DB はもう新しいファイルを指している。古いファイルを消せなくても誰も参照しないので、警告だけにする
-            let keep = Some(image.extension());
-            if let Err(err) = image_store::delete_image_except(&state.upload_dir, id, keep).await {
-                tracing::warn!(post_id = id, error = ?err, "failed to remove the replaced image");
-            }
+            remove_image_files(&state, id, Some(image.extension())).await;
+        }
+        ImageChange::Remove => {
+            post_repo::update(&state.db, id, form.title(), form.text()).await?;
+            post_repo::update_image_path(&state.db, id, None).await?;
+            remove_image_files(&state, id, None).await;
         }
     }
 
     Ok(Redirect::to(UPDATED_REDIRECT).into_response())
+}
+
+/// 投稿 id の画像ファイルを消す（`keep` の拡張子は残す。`None` なら全部消す）。
+///
+/// 呼ぶのは DB がもうそのファイルを参照しない（またはこれから行ごと消す）とき。
+/// 消せなくても残るのは誰も参照しないファイルだけなので、利用者への応答は失敗にせず警告ログを残す。
+async fn remove_image_files(state: &AppState, id: i64, keep: Option<ImageExt>) {
+    if let Err(err) = image_store::delete_image_except(&state.upload_dir, id, keep).await {
+        tracing::warn!(post_id = id, error = ?err, "failed to remove image file");
+    }
 }
 
 /// 一覧ページ（投稿フォームつき）の表示内容を組み立てる。フォームは空、メッセージはなし。

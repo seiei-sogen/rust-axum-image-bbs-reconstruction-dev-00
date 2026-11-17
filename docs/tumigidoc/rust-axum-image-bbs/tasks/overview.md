@@ -167,7 +167,7 @@ articles/
 
 - [x] [TASK-0013](TASK-0013.md): GET /posts/:id/edit 編集画面表示 — TDD, 4h ✅ 完了 (2026-11-17)
 - [x] [TASK-0014](TASK-0014.md): POST /posts/:id/edit 編集処理 — TDD, 4h ✅ 完了 (2026-11-17)
-- [ ] [TASK-0015](TASK-0015.md): 画像のみ削除（delete_image チェックボックス）対応 — TDD, 4h
+- [x] [TASK-0015](TASK-0015.md): 画像のみ削除（delete_image チェックボックス）対応 — TDD, 4h ✅ 完了 (2026-11-17)
 - [ ] [TASK-0016](TASK-0016.md): POST /posts/:id/delete 削除処理 — TDD, 4h
 
 📝 **Phase 2 完了時に書くまとめ記事**: 「まとめ④ 編集と削除で CRUD を完成させる」

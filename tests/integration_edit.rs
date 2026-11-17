@@ -259,3 +259,94 @@ async fn failed_image_save_keeps_the_post_and_its_old_file() {
         [format!("{id}.jpg"), format!("{id}.png")]
     );
 }
+
+#[tokio::test]
+async fn delete_image_checkbox_removes_only_the_image() {
+    let app = common::setup().await;
+    let id = create_with_image(&app, JPEG).await;
+
+    let res = common::post_multipart(
+        &app.router,
+        &format!("/posts/{id}/edit"),
+        &[
+            Part::Text("title", "古いタイトル"),
+            Part::Text("text", "残る本文"),
+            Part::Text("delete_image", "on"),
+        ],
+    )
+    .await;
+
+    assert_eq!(res.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        row(&app, id).await,
+        ("古いタイトル".into(), "残る本文".into(), None)
+    );
+    assert!(common::upload_files(&app).is_empty());
+    let (_, html) = common::get(&app.router, "/").await;
+    assert!(html.contains("残る本文"));
+    assert!(!html.contains("/uploads/"));
+}
+
+#[tokio::test]
+async fn new_image_wins_over_the_delete_checkbox() {
+    let app = common::setup().await;
+    let id = create_with_image(&app, JPEG).await;
+
+    let res = common::post_multipart(
+        &app.router,
+        &format!("/posts/{id}/edit"),
+        &[
+            Part::Text("title", "古いタイトル"),
+            Part::Text("delete_image", "on"),
+            Part::File("image", "new.png", PNG),
+        ],
+    )
+    .await;
+
+    assert_eq!(res.status, StatusCode::SEE_OTHER);
+    let png = format!("{id}.png");
+    assert_eq!(row(&app, id).await.2, Some(png.clone()));
+    assert_eq!(common::upload_files(&app), [png.as_str()]);
+    assert_eq!(upload(&app, &png), PNG);
+}
+
+#[tokio::test]
+async fn delete_checkbox_on_a_post_without_image_is_accepted() {
+    let app = common::setup().await;
+    let id = common::insert_post(&app.db, "画像なし", "", None).await;
+
+    let res = common::post_multipart(
+        &app.router,
+        &format!("/posts/{id}/edit"),
+        &[
+            Part::Text("title", "画像なし"),
+            Part::Text("delete_image", "on"),
+        ],
+    )
+    .await;
+
+    assert_eq!(res.status, StatusCode::SEE_OTHER);
+    assert_eq!(row(&app, id).await.2, None);
+}
+
+#[tokio::test]
+async fn invalid_edit_keeps_the_image_and_the_checked_checkbox() {
+    let app = common::setup().await;
+    let id = create_with_image(&app, JPEG).await;
+
+    let res = common::post_multipart(
+        &app.router,
+        &format!("/posts/{id}/edit"),
+        &[Part::Text("title", ""), Part::Text("delete_image", "on")],
+    )
+    .await;
+
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+    assert!(res.body.contains(r#"name="delete_image" value="on""#));
+    assert!(
+        res.body.contains(" checked>"),
+        "チェック状態も入力値として残る"
+    );
+    assert_eq!(row(&app, id).await, untouched_row(id, "jpg"));
+    assert_eq!(upload(&app, &format!("{id}.jpg")), JPEG);
+}
