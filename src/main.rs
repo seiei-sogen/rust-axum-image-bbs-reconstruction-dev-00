@@ -39,6 +39,19 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // ---------- .env の読み込み ----------
+    //
+    // カレントディレクトリの `.env` を読み、中の `KEY=VALUE` を環境変数として登録する。
+    // この後の RUST_LOG / DATABASE_URL / UPLOAD_DIR / PORT の読み取りより前に呼ぶ必要があるので、
+    // main の一番最初に置いている。
+    //
+    // 学習メモ:
+    // - `dotenv()` は `Result` を返す。`.env` が無いと `Err` になるが、
+    //   本番や Docker では環境変数を直接渡すので、ファイルが無いのは正常な状態。
+    //   `.ok()` で `Result` を `Option` に変換して結果を捨て、「無ければ何もしない」にしている。
+    //   （`Result` を使わずに放置すると、コンパイラが unused の警告を出す）
+    // - すでにシェルで設定されている環境変数は上書きされない。
+    //   `PORT=8080 cargo run` のようにシェルで渡した値が `.env` より優先される。
     dotenvy::dotenv().ok();
 
     // ---------- ロギング初期化 ----------
@@ -66,7 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //
     // DATABASE_URL 環境変数からデータベースのパスを取得する。
     // 環境変数が未設定の場合は "sqlite://data/app.db" をデフォルトとして使う。
-    // .env ファイルから読み込む場合は dotenv クレートを使うが、今回はシンプルに std::env で取得する。
+    // `.env` に書いた値も、冒頭の `dotenvy::dotenv()` によって環境変数として読める状態になっている。
     //
     // 学習メモ:
     // - `std::env::var("DATABASE_URL")` は Ok(String) か Err(VarError) を返す。
@@ -113,7 +126,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //   失敗時は `?` でエラーを伝播する。
     //
     // 型注釈 `SqlitePool` は `sqlx::Pool<sqlx::Sqlite>` のエイリアス。
-    // 次タスク TASK-0004 で `AppState { db_pool: SqlitePool, ... }` として持ち回す予定のため、
+    // この後 `AppState { db: pool, ... }` に入れて各ハンドラへ持ち回すため、
     // ここで型名を見える化しておく（型推論に任せても動くが、学習者向けに明示）。
     let pool: SqlitePool = SqlitePoolOptions::new()
         .max_connections(5)
@@ -133,10 +146,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     sqlx::migrate!("./migrations").run(&pool).await?;
     tracing::info!("migrations applied");
 
+    // ---------- アップロード先ディレクトリ ----------
+    //
+    // 画像の保存先。UPLOAD_DIR 環境変数で上書きでき、未設定なら `uploads/` を使う。
+    //
+    // 学習メモ:
+    // - `PathBuf` は「所有権を持つパス」。`String` に対する `&str` と同じ関係で、
+    //   借用版は `&Path`。AppState に持たせて長く使うので、所有する `PathBuf` にしている。
+    // - `create_dir_all` は途中のディレクトリもまとめて作り、既に存在していても成功する。
+    //   `&upload_dir` と借用で渡しているので、この後も `upload_dir` を使い続けられる。
     let upload_dir =
         PathBuf::from(std::env::var("UPLOAD_DIR").unwrap_or_else(|_| "uploads".to_string()));
     std::fs::create_dir_all(&upload_dir)?;
 
+    // ---------- 共有状態（AppState）の組み立て ----------
+    //
+    // DB 接続プール・アップロード先・設定値を1つの構造体にまとめる。
+    //
+    // 学習メモ:
+    // - `db: pool` で `pool` の所有権が `state` の中へ移動（ムーブ）する。
+    //   この行より後で `pool` という変数は使えなくなる（使うとコンパイルエラー）。
+    // - `upload_dir` と `config` は「フィールド名と変数名が同じなら `名前: 名前` を省略できる」記法。
     let config = AppConfig::from_env_or_default();
     let state = AppState {
         db: pool,
@@ -148,7 +178,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // `state` の所有権は build_app へムーブされる。
     let app = build_app(state);
 
-    // 0.0.0.0:3000 で TCP リスナを開く（WSL からホストアクセスする場合に接続しやすい）
+    // ---------- listen ----------
+    //
+    // 0.0.0.0（全インターフェース）で TCP リスナを開く（WSL からホストアクセスする場合に接続しやすい）。
+    // ポートは PORT 環境変数で上書きでき、未設定または数値でない場合は 3000 を使う。
+    //
+    // 学習メモ:
+    // - `std::env::var` は `Result<String, VarError>`。`.ok()` で `Option<String>` に変換する。
+    // - `.and_then(|value| value.parse().ok())` は「値があれば u16 への変換を試し、
+    //   失敗したら None にする」。`parse()` の変換先は、左辺の型注釈 `u16` から推論される。
+    // - `.unwrap_or(3000)` は None のときの既定値。
     let port: u16 = std::env::var("PORT")
         .ok()
         .and_then(|value| value.parse().ok())
