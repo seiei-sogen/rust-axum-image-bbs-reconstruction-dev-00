@@ -47,20 +47,39 @@ dotenvy = "0.15"
 ```rust:src/config.rs
 //! アプリ全体の設定値。
 //!
-//! 現時点ではページングと画像アップロードの安全なデフォルト値を集約する。
+//! ページングと画像アップロードの上限など、複数のモジュールから参照する値を1か所に集約する。
+//! ここに置いておくと、ハンドラ・バリデータ・テストが同じ値を見ることが保証される。
+//!
+//! 学習メモ:
+//! - 接続先やポートのように「環境ごとに変えたい値」（DATABASE_URL / PORT / UPLOAD_DIR）は
+//!   `src/main.rs` で環境変数から読んでいる。
+//!   このファイルの値は、学習用途なのでコード内の定数で固定している。
+//!   環境変数で変えたくなったら `from_env_or_default` の中で `std::env::var` を読めばよい。
 
+/// 一覧画面1ページあたりの件数。
 const DEFAULT_PAGE_SIZE: u32 = 20;
+/// 画像アップロードの上限バイト数（5MB）。
+/// ...（省略）
 const DEFAULT_MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
+/// 受け付ける画像の MIME タイプ。
+/// ...（学習メモは省略）
 const DEFAULT_ALLOWED_MIME: &[&str] = &["image/jpeg", "image/gif", "image/png"];
 
+/// アプリの設定値をまとめた構造体。
+/// ...（学習メモは省略）
 #[derive(Debug, Clone)]
 pub struct AppConfig {
+    /// 一覧画面1ページあたりの件数（既定 20）
     pub page_size: u32,
+    /// 画像アップロードのバイト数上限（既定 5MB）
     pub max_image_bytes: usize,
+    /// 許可される MIME タイプ
     pub allowed_mime: &'static [&'static str],
 }
 
 impl AppConfig {
+    /// 既定値で設定を作る。
+    /// ...（学習メモは省略）
     pub fn from_env_or_default() -> Self {
         Self {
             page_size: DEFAULT_PAGE_SIZE,
@@ -95,13 +114,19 @@ mod tests {
 タスクファイルには「`cargo test --doc` で書く程度は許容」とあったが、実装は `#[cfg(test)]` の普通の単体テストにした。このクレートは `lib.rs` を持たないバイナリクレートなので、doc テストを書いても実行されない。
 
 :::message
-関数名は `from_env_or_default` だが、**今のところ環境変数は一切読んでいない**。中身は3つの `const` を詰めて返すだけだ。タスクファイルの完了条件も「デフォルト値関数 `AppConfig::from_env_or_default()` がある」で、名前は将来の拡張の余地を残したものと読める。今回「環境変数から読む」のは、`main` が直接読む `PORT` / `UPLOAD_DIR` / `DATABASE_URL` だけである。
+関数名は `from_env_or_default` だが、**今のところ環境変数は一切読んでいない**。中身は3つの `const` を詰めて返すだけだ。モジュール冒頭の学習メモにも、学習用途なので定数で固定していると書いてある。タスクファイルの完了条件も「デフォルト値関数 `AppConfig::from_env_or_default()` がある」で、名前は将来の拡張の余地を残したものと読める。今回「環境変数から読む」のは、`main` が直接読む `PORT` / `UPLOAD_DIR` / `DATABASE_URL` だけである。
 :::
 
 ### `src/state.rs`
 
 ```rust:src/state.rs
 //! axum の State Extractor で共有する状態。
+//!
+//! 「全ハンドラから使いたいもの」（DB 接続プール・アップロード先・設定値）を1つの構造体にまとめ、
+//! `Router::with_state(state)` でルーターに登録する。
+//! ハンドラは引数に `State<AppState>` と書くだけで、この構造体を受け取れる。
+//!
+//! ...（学習メモは省略）
 
 use std::path::PathBuf;
 
@@ -109,10 +134,15 @@ use sqlx::SqlitePool;
 
 use crate::config::AppConfig;
 
+/// アプリ全体で共有する状態。
+/// ...（学習メモは省略）
 #[derive(Clone)]
 pub struct AppState {
+    /// DB 接続プール
     pub db: SqlitePool,
+    /// アップロード画像の保存先ディレクトリ
     pub upload_dir: PathBuf,
+    /// ページサイズや画像サイズ上限などの設定値
     pub config: AppConfig,
 }
 ```
@@ -138,7 +168,7 @@ pub struct AppState {
 sqlx のドキュメントにも「`Pool` の clone は参照カウント付きハンドルを作るだけなので安い」とある。複数のハンドラが同時に動いても、全員が同じ接続プールを共有する。タスクファイルの例にあった「Clone は内部で Arc が回るので安価」は接続プールについては正しいが、`PathBuf` は文字列のコピーを伴う。短いパス1本なので、この規模なら気にする量ではないと判断した。
 
 :::message
-設計ドキュメントは当初 `Arc<AppState>` を渡す方針だったが、TASK-0004 のコミットで `AppState` をそのまま渡す形に書き換えた。コミットに理由はない。私の理解では、接続プールが内部で `Arc` を持つので、外側をもう一度包む必要が薄い。
+設計ドキュメントは当初 `Arc<AppState>` を渡す方針だったが、実装するときに `AppState` をそのまま渡す形へ書き換えた。接続プールが内部で `Arc` を持つので、外側をもう一度 `Arc` で包む必要が薄いからだ。
 :::
 
 ## `dotenvy` で `.env` を読み込むタイミング
@@ -286,12 +316,16 @@ async fn root_handler(State(state): State<AppState>) -> &'static str {
 
 ### `RUST_LOG=debug` で起動してリクエストを送る
 
-`.env.example` は `PORT` のコメントだけが実装に合わせて変わった。
+`.env.example` は `PORT` と `UPLOAD_DIR` のコメントが実装に合わせて変わった。`UPLOAD_DIR` のコメントにある画像の保存は、第9回で実装する。
 
 ```sh:.env.example
 # サーバーのリッスンポート番号。
 # 未設定または不正値の場合は 3000 を使う。
 PORT=3000
+
+# 画像アップロード先のディレクトリ（プロジェクトルートからの相対パス）。
+# 画像は {投稿ID}.{拡張子} の名前で保存される。ディレクトリは起動時に自動で作成される。
+UPLOAD_DIR=uploads
 ```
 
 `.env` は `.gitignore` 済みなので、リポジトリには `.env.example` だけを置き、各自がコピーして `.env` を作る。相対パスはカレントディレクトリ基準で解決されるので、プロジェクトルートで実行する。`RUST_LOG=debug` を付けて起動する。
@@ -399,7 +433,6 @@ help: consider annotating `AppState` with `#[derive(Clone)]`
 
 - **`from_env_or_default` は環境変数を読まない**: 名前から期待すると外れる。`PAGE_SIZE=50` を `.env` に書いても何も変わらない
 - **`PORT` の不正値は黙って 3000 になる**: `PORT=abc` や `PORT=70000` は `parse` に失敗し、何も言わずに 3000 で起動するコードだ。仕様どおりだが打ち間違いに気づきにくいので、起動ログの `server listening on ...` でポートを確かめるとよい
-- **古いコメントが残っている**: この時点の `main.rs` には実装と合わないコメントが3か所ある。`PORT` 読み取りの直前の「0.0.0.0:3000 で TCP リスナを開く」、`DATABASE_URL` の箇所の「今回はシンプルに std::env で取得する」、接続プールの箇所の「`AppState { db_pool: SqlitePool, ... }`」（実際は `db`）だ。記事を書くために読み返して気づいた
 
 ## 次回予告
 
