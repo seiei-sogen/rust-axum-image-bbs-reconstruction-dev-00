@@ -130,10 +130,10 @@ articles/
 > ゴール: axum サーバが立ち上がり、構造化ログ・DB・AppState が動く骨組み完成。
 > このフェーズ完了で「Rust の Web 開発はこういう感じか」が掴めるところまで。
 
-- [ ] [TASK-0001](TASK-0001.md): プロジェクト初期化と axum 最小起動 — DIRECT, 4h
+- [x] [TASK-0001](TASK-0001.md): プロジェクト初期化と axum 最小起動 — DIRECT, 4h ✅ 完了 (2026-05-22)
 - [x] [TASK-0002](TASK-0002.md): tracing + tower-http TraceLayer 導入 — DIRECT, 4h ✅ 完了 (2026-05-23)
-- [ ] [TASK-0003](TASK-0003.md): SQLite + sqlx 接続とマイグレーション — DIRECT, 4h
-- [ ] [TASK-0004](TASK-0004.md): AppConfig / AppState 設計と環境変数読み込み — DIRECT, 4h
+- [x] [TASK-0003](TASK-0003.md): SQLite + sqlx 接続とマイグレーション — DIRECT, 4h ✅ 完了 (2026-05-25)
+- [x] [TASK-0004](TASK-0004.md): AppConfig / AppState 設計と環境変数読み込み — DIRECT, 4h ✅ 完了 (2026-06-12)
 
 📝 **Phase 1a 完了時に書くまとめ記事**: 「まとめ① プロジェクト基盤を組み立てる」
 
