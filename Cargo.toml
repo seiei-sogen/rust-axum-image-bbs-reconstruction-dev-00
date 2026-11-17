@@ -44,6 +44,10 @@ askama = "0.12"
 # askama_axum：Askama のテンプレート構造体に axum の IntoResponse を実装させる連携クレート。
 #   これを入れると、ハンドラはテンプレート構造体をそのまま return するだけで HTML を返せる。
 askama_axum = "0.4"
+# serde：Rust の構造体と外部データ（クエリ文字列・JSON など）を相互変換する定番クレート。
+#   features = ["derive"] で `#[derive(Deserialize)]` が使えるようになり、
+#   axum の `Query<T>` が `?page=2` を構造体 T に変換するときに使われる。
+serde = { version = "1", features = ["derive"] }
 
 # dev-dependencies はテスト（cargo test）のときだけ使うクレート。本番バイナリには含まれない。
 [dev-dependencies]

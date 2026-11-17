@@ -39,4 +39,18 @@
     {% endfor %}
   </div>
 {% endif %}
+
+{% if total_pages > 1 %}
+<nav aria-label="ページ送り">
+  <ul class="pagination">
+    {% if page > 1 %}
+    <li class="page-item"><a class="page-link" href="?page={{ page - 1 }}">前へ</a></li>
+    {% endif %}
+    <li class="page-item active" aria-current="page"><span class="page-link">{{ page }} / {{ total_pages }}</span></li>
+    {% if page < total_pages %}
+    <li class="page-item"><a class="page-link" href="?page={{ page + 1 }}">次へ</a></li>
+    {% endif %}
+  </ul>
+</nav>
+{% endif %}
 {% endblock %}

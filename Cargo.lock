@@ -1287,6 +1287,7 @@ dependencies = [
  "axum",
  "chrono",
  "dotenvy",
+ "serde",
  "sqlx",
  "tempfile",
  "tokio",
