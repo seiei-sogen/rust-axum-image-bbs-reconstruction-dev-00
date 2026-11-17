@@ -10,6 +10,7 @@
 //!   （`<script>` が `&lt;script&gt;` になる）。ユーザー入力をそのまま出しても XSS にならない（NFR-104）。
 
 use askama::Template;
+use axum::http::StatusCode;
 
 use crate::models::post::Post;
 use crate::validators::post_form::PostFormInput;
@@ -32,4 +33,14 @@ pub struct IndexView {
     pub errors: Vec<String>,
     /// 直前の操作の成功メッセージ（REQ-202）。メッセージは固定文なので `&'static str` で持つ。
     pub success_msg: Option<&'static str>,
+}
+
+/// エラーページ（400 / 404 / 413 / 500）のビューモデル。`AppError` の `IntoResponse` から使う。
+#[derive(Template)]
+#[template(path = "error.html")]
+pub struct ErrorView {
+    /// HTTP ステータス。テンプレートでは `404 Not Found` のように表示される（StatusCode の Display）。
+    pub status: StatusCode,
+    /// 利用者に見せるメッセージ。内部の詳細（SQL やファイルパス）は入れない。
+    pub messages: Vec<String>,
 }

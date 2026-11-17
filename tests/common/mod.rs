@@ -64,6 +64,7 @@ pub async fn setup() -> TestApp {
 ///
 /// `oneshot` はルーターの所有権を消費するので、`clone()` した複製に投げる。
 /// こうすると同じ `TestApp` に何度でもリクエストできる。
+#[allow(dead_code)]
 pub async fn get(router: &Router, uri: &str) -> (StatusCode, String) {
     let response = router
         .clone()

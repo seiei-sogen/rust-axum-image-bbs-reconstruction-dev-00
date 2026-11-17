@@ -34,6 +34,7 @@ use axum::{
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 
+use crate::errors::AppError;
 use crate::handlers::posts;
 use crate::state::AppState;
 
@@ -80,6 +81,9 @@ pub fn build_app(state: AppState) -> Router {
         // `route` は「この URL にこのハンドラ関数」、`nest_service` は「この URL 以下を丸ごとこのサービスに」。
         // ServeDir には `/uploads` を取り除いた残り（`/5.png`）が渡る。
         .nest_service("/uploads", uploads)
+        // どのルートにも当たらない未定義パスは、AppError::NotFound の 404 ページにする。
+        // `.layer()` は「それより前に登録したもの」にだけかかるので、fallback は layer より前に置く。
+        .fallback(|| async { AppError::NotFound })
         // multipart の読み取りはこの上限で打ち切られる（超えたら 413）
         .layer(DefaultBodyLimit::max(max_body_bytes))
         .layer(TraceLayer::new_for_http())

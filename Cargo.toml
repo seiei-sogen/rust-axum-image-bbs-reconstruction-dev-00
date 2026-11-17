@@ -54,6 +54,12 @@ serde = { version = "1", features = ["derive"] }
 #   PNG なら必ず `89 50 4E 47`、JPEG なら `FF D8 FF` で始まる、という決まりを使う。
 #   クライアントが申告するファイル名や Content-Type は簡単に偽装できるので、画像形式はこれで判定する（NFR-102）。
 infer = "0.16"
+# thiserror：エラー型の定型コード（Display / std::error::Error / From の実装）を derive で自動生成する。
+#   `#[error("...")]` で表示文、`#[from]` で `?` 用の From 変換が作られる。
+thiserror = "1"
+# anyhow：どんなエラーでも1つの型 `anyhow::Error` に包めるクレート。
+#   AppError::Other に入れて、専用のバリアントを作るまでもない想定外のエラーの受け皿にする。
+anyhow = "1"
 
 # dev-dependencies はテスト（cargo test）のときだけ使うクレート。本番バイナリには含まれない。
 [dev-dependencies]
