@@ -7,6 +7,8 @@ mod common;
 use axum::body::Body;
 use axum::http::header::CONTENT_TYPE;
 use axum::http::{Request, StatusCode};
+use rust_axum_image_bbs::{build_app, config::AppConfig, state::AppState};
+use sqlx::sqlite::SqlitePoolOptions;
 
 #[tokio::test]
 async fn unknown_path_returns_404_html_page() {
@@ -68,4 +70,34 @@ async fn db_failure_returns_500_page_without_internal_details() {
     assert!(res.content_type.unwrap().starts_with("text/html"));
     assert!(res.body.contains("サーバでエラーが発生しました"));
     assert!(!res.body.to_lowercase().contains("pool"));
+}
+
+#[tokio::test]
+async fn unmigrated_db_returns_500_and_logs_the_cause_as_error() {
+    // マイグレーションを当てていない空の DB（post テーブルが無い）でアプリを組み立てる
+    let db = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    let upload_dir = tempfile::TempDir::new().unwrap();
+    let router = build_app(AppState {
+        db,
+        upload_dir: upload_dir.path().to_path_buf(),
+        config: AppConfig::from_env_or_default(),
+    });
+    let (logs, _guard) = common::capture_logs();
+
+    let (status, html) = common::get(&router, "/").await;
+
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(html.contains("サーバでエラーが発生しました"));
+    assert!(!html.contains("no such table"), "原因は利用者には見せない");
+    // 運用者が原因を追えるよう、ERROR のログに DB のエラー内容が残る（EDGE-004）
+    let logs = logs.text();
+    assert!(
+        logs.lines()
+            .any(|line| line.contains("ERROR") && line.contains("no such table: post")),
+        "ログ:\n{logs}"
+    );
 }

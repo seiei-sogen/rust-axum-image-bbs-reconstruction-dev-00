@@ -66,6 +66,40 @@ async fn list_shows_image_only_for_posts_with_image() {
 }
 
 #[tokio::test]
+async fn single_post_with_image_shows_image_title_text_and_date_in_one_card() {
+    let app = common::setup().await;
+    let id = common::insert_post(&app.db, "画像つきの投稿", "画像の説明", None).await;
+    let image = format!("{id}.jpg");
+    sqlx::query("UPDATE post SET image = ? WHERE id = ?")
+        .bind(&image)
+        .bind(id)
+        .execute(&app.db)
+        .await
+        .unwrap();
+    let regist_date: String = sqlx::query_scalar("SELECT regist_date FROM post WHERE id = ?")
+        .bind(id)
+        .fetch_one(&app.db)
+        .await
+        .unwrap();
+
+    let (status, html) = common::get(&app.router, "/").await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(count(&html, "<article"), 1);
+    // `<article` から `</article>` までの1枚のカードに、4つとも入っている
+    let card = &html[html.find("<article").unwrap()..html.find("</article>").unwrap()];
+    let src = format!(r#"src="/uploads/{image}""#);
+    for expected in [
+        src.as_str(),
+        "画像つきの投稿",
+        "画像の説明",
+        regist_date.as_str(),
+    ] {
+        assert!(card.contains(expected), "カードに {expected} が含まれる");
+    }
+}
+
+#[tokio::test]
 async fn list_escapes_html_in_posts() {
     let app = common::setup().await;
     common::insert_post(&app.db, "<script>alert(1)</script>", "<b>太字</b>", None).await;
@@ -154,6 +188,24 @@ async fn pager_is_hidden_when_everything_fits_on_one_page() {
         assert!(!html.contains("pagination"));
         assert!(!html.contains("次へ") && !html.contains("前へ"));
     }
+}
+
+#[tokio::test]
+async fn list_of_100_posts_renders_within_500ms() {
+    let app = common::setup().await;
+    insert_numbered_posts(&app.db, 100).await;
+
+    // 計測するのはルーターの処理（DB の問い合わせ + HTML の描画）だけ。ネットワークは含まない
+    let started = std::time::Instant::now();
+    let (status, html) = common::get(&app.router, "/").await;
+    let elapsed = started.elapsed();
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(count(&html, "<article"), 20);
+    assert!(
+        elapsed < std::time::Duration::from_millis(500),
+        "100件の一覧に {elapsed:?} かかった（目標は 500ms 以内、NFR-001）"
+    );
 }
 
 #[tokio::test]

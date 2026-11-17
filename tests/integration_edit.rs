@@ -147,6 +147,68 @@ async fn edit_updates_title_and_text_and_keeps_the_image() {
 }
 
 #[tokio::test]
+async fn edit_of_title_only_keeps_text_and_image_and_refreshes_update_date() {
+    let app = common::setup().await;
+    let id = create_with_image(&app, JPEG).await;
+    // 作成直後の update_date は「今」なので、変わったことが分かるよう過去の時刻にしておく
+    let old_date = "2000-01-01 00:00:00";
+    sqlx::query("UPDATE post SET update_date = ? WHERE id = ?")
+        .bind(old_date)
+        .bind(id)
+        .execute(&app.db)
+        .await
+        .unwrap();
+
+    // 編集フォームはタイトルと本文の両方を送る。本文は今の値のまま、タイトルだけ書き換える
+    let res = common::post_multipart(
+        &app.router,
+        &format!("/posts/{id}/edit"),
+        &[
+            Part::Text("title", "新タイトル"),
+            Part::Text("text", "古い本文"),
+        ],
+    )
+    .await;
+
+    assert_eq!(res.status, StatusCode::SEE_OTHER);
+    let jpg = format!("{id}.jpg");
+    assert_eq!(
+        row(&app, id).await,
+        ("新タイトル".into(), "古い本文".into(), Some(jpg.clone()))
+    );
+    assert_eq!(upload(&app, &jpg), JPEG);
+    let update_date: String = sqlx::query_scalar("SELECT update_date FROM post WHERE id = ?")
+        .bind(id)
+        .fetch_one(&app.db)
+        .await
+        .unwrap();
+    assert_ne!(update_date, old_date, "update_date は更新される");
+}
+
+#[tokio::test]
+async fn edit_with_51_char_title_is_rejected_and_keeps_the_input() {
+    let app = common::setup().await;
+    let id = create_with_image(&app, JPEG).await;
+    let title = "あ".repeat(51);
+
+    let res = common::post_multipart(
+        &app.router,
+        &format!("/posts/{id}/edit"),
+        &[
+            Part::Text("title", &title),
+            Part::Text("text", "入力した本文"),
+        ],
+    )
+    .await;
+
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+    assert!(res.body.contains("タイトルは50文字以内で入力してください"));
+    assert!(res.body.contains(&format!(r#"value="{title}""#)));
+    assert!(res.body.contains(">入力した本文</textarea>"));
+    assert_eq!(row(&app, id).await, untouched_row(id, "jpg"));
+}
+
+#[tokio::test]
 async fn edit_with_new_image_replaces_it_and_removes_the_old_extension() {
     let app = common::setup().await;
     let id = create_with_image(&app, JPEG).await;

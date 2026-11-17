@@ -42,6 +42,10 @@ async fn create_inserts_post_and_redirects_with_303() {
         (title.as_str(), text.as_str(), image),
         ("hello", "world", None)
     );
+    assert!(
+        common::upload_files(&app).is_empty(),
+        "画像なしならファイルは作られない"
+    );
 }
 
 #[tokio::test]
@@ -209,6 +213,7 @@ async fn body_far_over_the_limit_returns_413() {
     .await;
 
     assert_eq!(res.status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert!(res.body.contains("画像は5MB以内にしてください"));
     assert_eq!(common::post_count(&app.db).await, 0);
     assert!(common::upload_files(&app).is_empty());
 }
@@ -384,4 +389,169 @@ async fn failed_image_save_rolls_back_the_post() {
 
     assert_eq!(res.status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(common::post_count(&app.db).await, 0, "投稿は取り消される");
+    // 書きかけのファイルも残らない（あるのは塞ぐために置いたディレクトリだけ）
+    assert_eq!(common::upload_files(&app), ["1.png"]);
+}
+
+/// 形式は先頭バイト（マジックナンバー）で判定されるので、後ろは中身を見分けるための適当な文字列。
+const JPEG: &[u8] = b"\xFF\xD8\xFF\xE0jpeg body";
+const GIF: &[u8] = b"GIF89a gif body";
+/// PDF と Windows の実行ファイルの先頭バイト。`infer` は「画像ではない形式」と判定する。
+const PDF: &[u8] = b"%PDF-1.4\n% not an image";
+const EXE: &[u8] = b"MZ\x90\x00not an image";
+
+/// 投稿 id の (title, text, image) を DB から読む。
+async fn row(db: &sqlx::SqlitePool, id: i64) -> (String, String, Option<String>) {
+    sqlx::query_as("SELECT title, text, image FROM post WHERE id = ?")
+        .bind(id)
+        .fetch_one(db)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn jpeg_with_title_and_text_is_saved_as_id_jpg() {
+    let app = common::setup().await;
+
+    let res = common::post_multipart(
+        &app.router,
+        "/posts",
+        &[
+            Part::Text("title", "テスト"),
+            Part::Text("text", "本文"),
+            Part::File("image", "test.jpg", JPEG),
+        ],
+    )
+    .await;
+
+    assert_eq!(res.status, StatusCode::SEE_OTHER);
+    let id = newest_id(&app.db).await;
+    let jpg = format!("{id}.jpg");
+    assert_eq!(
+        row(&app.db, id).await,
+        ("テスト".into(), "本文".into(), Some(jpg.clone()))
+    );
+    assert_eq!(common::upload_files(&app), [jpg.as_str()]);
+    assert_eq!(
+        std::fs::read(app.upload_dir.path().join(&jpg)).unwrap(),
+        JPEG
+    );
+}
+
+#[tokio::test]
+async fn gif_is_saved_as_id_gif() {
+    let app = common::setup().await;
+
+    let res = common::post_multipart(
+        &app.router,
+        "/posts",
+        &[
+            Part::Text("title", "アニメ"),
+            Part::File("image", "anim.gif", GIF),
+        ],
+    )
+    .await;
+
+    assert_eq!(res.status, StatusCode::SEE_OTHER);
+    let id = newest_id(&app.db).await;
+    let gif = format!("{id}.gif");
+    assert_eq!(image_column(&app.db, id).await, Some(gif.clone()));
+    assert_eq!(common::upload_files(&app), [gif.as_str()]);
+    assert_eq!(
+        std::fs::read(app.upload_dir.path().join(&gif)).unwrap(),
+        GIF
+    );
+}
+
+#[tokio::test]
+async fn other_formats_are_rejected_even_when_named_like_images() {
+    // (ファイル名, 中身): PDF そのもの / PDF を .jpg に改名 / 実行ファイルを .jpg に改名
+    for (filename, bytes) in [("evil.pdf", PDF), ("evil.jpg", PDF), ("image.jpg", EXE)] {
+        let app = common::setup().await;
+
+        let res = common::post_multipart(
+            &app.router,
+            "/posts",
+            &[
+                Part::Text("title", "偽装"),
+                Part::File("image", filename, bytes),
+            ],
+        )
+        .await;
+
+        assert_eq!(res.status, StatusCode::BAD_REQUEST, "{filename}");
+        assert!(
+            res.body
+                .contains("対応していない画像形式です (jpg/gif/png)"),
+            "{filename}"
+        );
+        assert_eq!(common::post_count(&app.db).await, 0, "{filename}");
+        assert!(common::upload_files(&app).is_empty(), "{filename}");
+    }
+}
+
+#[tokio::test]
+async fn title_of_51_chars_is_rejected_and_text_is_kept() {
+    let app = common::setup().await;
+
+    let res = common::post_multipart(
+        &app.router,
+        "/posts",
+        &[
+            Part::Text("title", &"あ".repeat(51)),
+            Part::Text("text", "残る本文"),
+        ],
+    )
+    .await;
+
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+    assert!(res.body.contains("タイトルは50文字以内で入力してください"));
+    assert!(res.body.contains(">残る本文</textarea>"));
+    assert_eq!(common::post_count(&app.db).await, 0);
+}
+
+#[tokio::test]
+async fn shortest_and_longest_allowed_lengths_are_saved() {
+    let app = common::setup().await;
+    // (タイトル, 本文): 1文字のタイトルと空の本文 / 50文字のタイトルと500文字の本文
+    let cases = [
+        ("a".to_string(), String::new()),
+        ("あ".repeat(50), "い".repeat(500)),
+    ];
+
+    for (title, text) in &cases {
+        let res = common::post_multipart(
+            &app.router,
+            "/posts",
+            &[Part::Text("title", title), Part::Text("text", text)],
+        )
+        .await;
+
+        let lengths = (title.chars().count(), text.chars().count());
+        assert_eq!(res.status, StatusCode::SEE_OTHER, "文字数 {lengths:?}");
+        let (saved_title, saved_text, _) = row(&app.db, newest_id(&app.db).await).await;
+        assert_eq!(
+            (&saved_title, &saved_text),
+            (title, text),
+            "文字数 {lengths:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn sql_in_the_title_is_saved_as_plain_text() {
+    let app = common::setup().await;
+    let title = "'); DROP TABLE post; --";
+
+    let res = common::post_multipart(&app.router, "/posts", &[Part::Text("title", title)]).await;
+
+    assert_eq!(res.status, StatusCode::SEE_OTHER);
+    // テーブルは壊れておらず、入力した文字列がそのままタイトルとして1件保存されている
+    let titles: Vec<String> = sqlx::query_scalar("SELECT title FROM post")
+        .fetch_all(&app.db)
+        .await
+        .unwrap();
+    assert_eq!(titles, [title]);
+    let (status, _) = common::get(&app.router, "/").await;
+    assert_eq!(status, StatusCode::OK);
 }

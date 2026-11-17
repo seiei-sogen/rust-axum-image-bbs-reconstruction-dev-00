@@ -14,8 +14,11 @@ use axum::Router;
 use rust_axum_image_bbs::{build_app, config::AppConfig, state::AppState};
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::SqlitePool;
+use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 use tower::ServiceExt; // `oneshot` メソッドを使えるようにするトレイト
+use tracing::subscriber::DefaultGuard;
+use tracing_subscriber::fmt::MakeWriter;
 
 /// テスト1件ぶんのアプリ一式。
 pub struct TestApp {
@@ -183,6 +186,61 @@ pub async fn post_count(db: &SqlitePool) -> i64 {
         .fetch_one(db)
         .await
         .unwrap()
+}
+
+/// テスト中に出たログ（tracing の出力）をためておく入れ物。`capture_logs` で作る。
+///
+/// 学習メモ:
+/// - `Arc<Mutex<Vec<u8>>>` は「複数の持ち主で共有し（Arc）、書き込みは1人ずつ（Mutex）」のバイト列。
+///   ログを書く側（subscriber）と読む側（テスト）が同じバッファを指せるよう、clone しても中身は共有される。
+#[allow(dead_code)]
+#[derive(Clone, Default)]
+pub struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
+
+#[allow(dead_code)]
+impl CapturedLogs {
+    /// ここまでにたまったログ全体（1行 = 1イベント）。
+    pub fn text(&self) -> String {
+        String::from_utf8_lossy(&self.0.lock().unwrap()).into_owned()
+    }
+}
+
+/// tracing-subscriber はログを `std::io::Write` に書き出すので、バッファへ追記する Write を実装する。
+impl std::io::Write for CapturedLogs {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// subscriber は1行書くたびに `make_writer` で書き込み先を受け取る。共有バッファの複製を渡す。
+impl<'a> MakeWriter<'a> for CapturedLogs {
+    type Writer = CapturedLogs;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+/// このスレッドで出る INFO 以上のログを集め始める（本番の既定と同じ人間向けの形式）。
+///
+/// 戻り値の guard を変数に入れておく間だけ集める。`let _ = ...` にすると即 drop されて何も集まらない。
+///
+/// 学習メモ:
+/// - `set_default` は「このスレッドだけ」の subscriber を設定する。`#[tokio::test]` は既定で
+///   1スレッドでテストを動かすので、ハンドラの中で出たログもここに集まり、並列に走る他のテストとは混ざらない。
+#[allow(dead_code)]
+pub fn capture_logs() -> (CapturedLogs, DefaultGuard) {
+    let logs = CapturedLogs::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(logs.clone())
+        .with_ansi(false)
+        .finish();
+    (logs, tracing::subscriber::set_default(subscriber))
 }
 
 /// 投稿を1件 INSERT し、採番された id を返す。
