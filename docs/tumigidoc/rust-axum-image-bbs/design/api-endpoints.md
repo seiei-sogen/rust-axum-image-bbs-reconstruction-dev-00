@@ -109,7 +109,7 @@ http://localhost:3000
 - `text` (string, optional, 0〜500字)
 - `image` (file, optional, jpg/gif/png, 5MB以下)
 
-**正常系レスポンス**: 303 See Other → `Location: /`
+**正常系レスポンス**: 303 See Other → `Location: /?notice=created`（一覧に成功メッセージを出すためのクエリ。REQ-202）
 
 **異常系レスポンス**:
 | ステータス | 条件 | 関連 |
@@ -165,7 +165,7 @@ http://localhost:3000
 - `image` (file, optional): 新しい画像を選択した場合のみ
 - `delete_image` (checkbox, optional): ON のとき画像を削除（REQ-103）
 
-**正常系レスポンス**: 303 See Other → `Location: /`
+**正常系レスポンス**: 303 See Other → `Location: /?notice=updated`（一覧に成功メッセージを出すためのクエリ。REQ-202）
 
 **画像の取り扱い**:
 | 入力状態 | 動作 |
@@ -200,7 +200,7 @@ http://localhost:3000
 
 **リクエスト**: ボディなし（ヘッダのみ）
 
-**正常系レスポンス**: 303 See Other → `Location: /`
+**正常系レスポンス**: 303 See Other → `Location: /?notice=deleted`（一覧に成功メッセージを出すためのクエリ。REQ-202）
 
 **サーバ処理**:
 1. `find(id)` で存在確認（なければ 404）
