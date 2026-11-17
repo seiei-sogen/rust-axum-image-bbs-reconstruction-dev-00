@@ -113,13 +113,27 @@ articles/
 
 #### 進捗
 
-| 記事 | 状態 | ファイル |
-|---|---|---|
-| (01) プロジェクト初期化と Hello, axum! | ✅ 生成済み | [articles/rust-axum-imgbbs-01-init.md](../../../../articles/rust-axum-imgbbs-01-init.md) |
-| (02) tracing で構造化ログを入れる | 未生成 | - |
-| (03) sqlx + SQLite マイグレーション | 未生成 | - |
-| (04) AppState / AppConfig と環境変数 | 未生成 | - |
-| 以降... | 未生成 | - |
+実際の連載は、当初案（1タスク1記事で20本 + フェーズまとめ5本）から **1記事1トピックの全13本** に組み替えた。
+複数のタスクが1つの話題になるところ（一覧表示、投稿作成、編集と削除など）は1本にまとめている。
+(1)〜(3) は Zenn で公開済み、(4)〜(13) は `articles/` に `published: false` の下書きとして置いてある。
+ファイル名は公開済みの記事に合わせて `{日付}_rust-axum-imgbbs-{番号}-{slug}.md` とした。
+フェーズまとめ記事（5本）は未着手。
+
+| 記事 | 対応タスク | 状態 | ファイル |
+|---|---|---|---|
+| (1) プロジェクト初期化と Hello, axum! | TASK-0001 | ✅ 公開済み | [Zenn](https://zenn.dev/purenium/articles/2026_05_22_rust-axum-imgbbs-01-init) |
+| (2) tracing と TraceLayer で開発体験を整える | TASK-0002 | ✅ 公開済み | [Zenn](https://zenn.dev/purenium/articles/2026_05_23_rust-axum-imgbbs-02-tracing) |
+| (3) SQLite + sqlx 接続とマイグレーション | TASK-0003 | ✅ 公開済み | [Zenn](https://zenn.dev/purenium/articles/2026_05_25_rust-axum-imgbbs-03-sqlx-migration) |
+| (4) AppConfig / AppState と環境変数読み込み | TASK-0004 | 📝 下書き | [04-appstate](../../../../articles/2026_11_17_rust-axum-imgbbs-04-appstate.md) |
+| (5) Post モデルとリポジトリ層を sqlx で書く | TASK-0005 | 📝 下書き | [05-post-repository](../../../../articles/2026_11_17_rust-axum-imgbbs-05-post-repository.md) |
+| (6) Askama で投稿一覧を表示する | TASK-0006, 0007 | 📝 下書き | [06-askama-list](../../../../articles/2026_11_17_rust-axum-imgbbs-06-askama-list.md) |
+| (7) ページネーションを実装する | TASK-0008 | 📝 下書き | [07-pagination](../../../../articles/2026_11_17_rust-axum-imgbbs-07-pagination.md) |
+| (8) バリデーションと multipart での投稿作成 | TASK-0009, 0010 | 📝 下書き | [08-validation-create](../../../../articles/2026_11_17_rust-axum-imgbbs-08-validation-create.md) |
+| (9) 画像アップロードとロールバック | TASK-0011 | 📝 下書き | [09-image-upload](../../../../articles/2026_11_17_rust-axum-imgbbs-09-image-upload.md) |
+| (10) AppError と IntoResponse でエラー処理をまとめる | TASK-0012 | 📝 下書き | [10-app-error](../../../../articles/2026_11_17_rust-axum-imgbbs-10-app-error.md) |
+| (11) 編集と削除で CRUD を完成させる | TASK-0013〜0016 | 📝 下書き | [11-edit-delete](../../../../articles/2026_11_17_rust-axum-imgbbs-11-edit-delete.md) |
+| (12) 統合テストで主要シナリオを固める | TASK-0017, 0018 | 📝 下書き | [12-integration-test](../../../../articles/2026_11_17_rust-axum-imgbbs-12-integration-test.md) |
+| (13) Docker と README で配布できる形にする | TASK-0019, 0020 | 📝 下書き | [13-docker-readme](../../../../articles/2026_11_17_rust-axum-imgbbs-13-docker-readme.md) |
 
 ---
 

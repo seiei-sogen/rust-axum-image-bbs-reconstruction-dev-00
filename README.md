@@ -155,15 +155,23 @@ E2E_BASE_URL=http://127.0.0.1:3000 E2E_UPLOAD_DIR=uploads scripts/e2e.sh
 
 ## Zenn 記事
 
-タスクごとの記事を `articles/` に置いています。フェーズごとの区切りは次のとおりです。
+実装の過程を全13回の連載にしています。(1)〜(3) は公開済み、(4)〜(13) は `articles/` に下書き（`published: false`）を置いています。
 
-| フェーズ | 内容 | タスク |
+| 回 | 内容 | タスク |
 |---|---|---|
-| Phase 1a | プロジェクト基盤（axum・tracing・sqlx・AppState） | TASK-0001〜0004 |
-| Phase 1b | SQLite と Askama で一覧表示・ページ送り | TASK-0005〜0008 |
-| Phase 1c | バリデーション・画像アップロード・エラー処理 | TASK-0009〜0012 |
-| Phase 2 | 編集と削除で CRUD を完成させる | TASK-0013〜0016 |
-| Phase 3 | 統合テスト・Docker・ログ・README | TASK-0017〜0020 |
+| [(1)](https://zenn.dev/purenium/articles/2026_05_22_rust-axum-imgbbs-01-init) | プロジェクト初期化と Hello, axum! | TASK-0001 |
+| [(2)](https://zenn.dev/purenium/articles/2026_05_23_rust-axum-imgbbs-02-tracing) | tracing と TraceLayer で開発体験を整える | TASK-0002 |
+| [(3)](https://zenn.dev/purenium/articles/2026_05_25_rust-axum-imgbbs-03-sqlx-migration) | SQLite + sqlx 接続とマイグレーション | TASK-0003 |
+| [(4)](articles/2026_11_17_rust-axum-imgbbs-04-appstate.md) | AppConfig / AppState と環境変数読み込み | TASK-0004 |
+| [(5)](articles/2026_11_17_rust-axum-imgbbs-05-post-repository.md) | Post モデルとリポジトリ層を sqlx で書く | TASK-0005 |
+| [(6)](articles/2026_11_17_rust-axum-imgbbs-06-askama-list.md) | Askama で投稿一覧を表示する | TASK-0006, 0007 |
+| [(7)](articles/2026_11_17_rust-axum-imgbbs-07-pagination.md) | ページネーションを実装する | TASK-0008 |
+| [(8)](articles/2026_11_17_rust-axum-imgbbs-08-validation-create.md) | バリデーションと multipart での投稿作成 | TASK-0009, 0010 |
+| [(9)](articles/2026_11_17_rust-axum-imgbbs-09-image-upload.md) | 画像アップロードとロールバック | TASK-0011 |
+| [(10)](articles/2026_11_17_rust-axum-imgbbs-10-app-error.md) | AppError と IntoResponse でエラー処理をまとめる | TASK-0012 |
+| [(11)](articles/2026_11_17_rust-axum-imgbbs-11-edit-delete.md) | 編集と削除で CRUD を完成させる | TASK-0013〜0016 |
+| [(12)](articles/2026_11_17_rust-axum-imgbbs-12-integration-test.md) | 統合テストで主要シナリオを固める | TASK-0017, 0018 |
+| [(13)](articles/2026_11_17_rust-axum-imgbbs-13-docker-readme.md) | Docker と README で配布できる形にする | TASK-0019, 0020 |
 
 ## ライセンス
 
