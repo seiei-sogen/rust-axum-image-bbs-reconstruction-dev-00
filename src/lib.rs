@@ -25,11 +25,26 @@ pub mod state;
 pub mod templates;
 pub mod validators;
 
-use axum::{extract::DefaultBodyLimit, routing::get, Router};
+use axum::{
+    extract::DefaultBodyLimit,
+    routing::{get, post},
+    Router,
+};
 use tower_http::trace::TraceLayer;
 
 use crate::handlers::posts;
 use crate::state::AppState;
+
+/// リクエストボディの上限を決めるとき、画像の上限（`max_image_bytes`）に上乗せする余裕（64KiB）。
+///
+/// multipart のボディには画像のほかに、区切り線・各欄のヘッダ・タイトルと本文の値が入る。
+/// 上限を画像の上限ちょうどにすると、ちょうど 5MB の画像（受け付けるべきもの）まで 413 で弾かれてしまう。
+/// - 画像 ≤ 5MB              → 受け付ける
+/// - 5MB < 画像 ≤ 5MB + 余裕 → ボディは読めるのでバリデータまで届き、フォーム再表示の 400
+/// - それより大きい          → 読み取りの途中で打ち切って 413（巨大なボディをメモリに溜めない）
+///
+/// タイトル 50 文字・本文 500 文字は UTF-8 でも数 KB なので、64KiB あれば区切りやヘッダを含めて十分足りる。
+const MULTIPART_OVERHEAD_BYTES: usize = 64 * 1024;
 
 /// アプリのルーター（URL とハンドラの対応表 + ミドルウェア）を組み立てる。
 ///
@@ -39,7 +54,7 @@ use crate::state::AppState;
 /// - 戻り値の `Router` は `main.rs` では `axum::serve` に渡し、統合テストでは `oneshot` で直接呼び出す。
 pub fn build_app(state: AppState) -> Router {
     // `state` をルーターへムーブする前に、必要な値（usize はコピーされる）を取り出しておく
-    let max_body_bytes = state.config.max_image_bytes;
+    let max_body_bytes = state.config.max_image_bytes + MULTIPART_OVERHEAD_BYTES;
 
     // ---------- ルーター組み立て ----------
     //
@@ -55,6 +70,8 @@ pub fn build_app(state: AppState) -> Router {
     // - AppState は Router::with_state で各ハンドラへ共有する。
     Router::new()
         .route("/", get(posts::list))
+        .route("/posts", post(posts::create))
+        // multipart の読み取りはこの上限で打ち切られる（超えたら 413）
         .layer(DefaultBodyLimit::max(max_body_bytes))
         .layer(TraceLayer::new_for_http())
         .with_state(state)

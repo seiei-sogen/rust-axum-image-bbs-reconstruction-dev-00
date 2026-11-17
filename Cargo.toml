@@ -6,7 +6,8 @@ description = "旧PHP画像掲示板を Rust + axum で再実装する学習用�
 
 [dependencies]
 # axum 本体（HTTP ルーティング・ハンドラ・抽出器を提供する Web フレームワーク）
-axum = "0.7"
+#   features = ["multipart"] で、ファイル付きフォーム（multipart/form-data）を読む `Multipart` 抽出器が使える。
+axum = { version = "0.7", features = ["multipart"] }
 # tokio：axum が依存する非同期ランタイム。"full" は学習用に主要機能を一括有効化
 tokio = { version = "1", features = ["full"] }
 # tracing：Rust 標準的な構造化ログ・トレーシングファサード。

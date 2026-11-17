@@ -8,6 +8,7 @@
 //!   このファイルに限り `#[allow(dead_code)]` を付けてよいことにしている。
 
 use axum::body::Body;
+use axum::http::header::{CONTENT_TYPE, LOCATION};
 use axum::http::{Request, StatusCode};
 use axum::Router;
 use rust_axum_image_bbs::{build_app, config::AppConfig, state::AppState};
@@ -76,7 +77,92 @@ pub async fn get(router: &Router, uri: &str) -> (StatusCode, String) {
     (status, String::from_utf8(bytes.to_vec()).unwrap())
 }
 
+/// `send` / `post_multipart` の結果。
+#[allow(dead_code)]
+pub struct TestResponse {
+    pub status: StatusCode,
+    /// `Location` ヘッダ（リダイレクト先）。無ければ `None`。
+    pub location: Option<String>,
+    /// 本文。HTML を検査しやすいよう文字列にしておく（UTF-8 でない部分は置き換え文字になる）。
+    pub body: String,
+}
+
+/// 任意のリクエストをルーターへ投げ、ステータス・Location・本文を返す。
+#[allow(dead_code)]
+pub async fn send(router: &Router, request: Request<Body>) -> TestResponse {
+    let response = router.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let location = response
+        .headers()
+        .get(LOCATION)
+        .map(|value| value.to_str().unwrap().to_string());
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    TestResponse {
+        status,
+        location,
+        body: String::from_utf8_lossy(&bytes).into_owned(),
+    }
+}
+
+/// multipart/form-data の1欄。
+#[allow(dead_code)]
+pub enum Part<'a> {
+    /// テキスト欄: (name, 値)
+    Text(&'a str, &'a str),
+    /// ファイル欄: (name, ファイル名, 中身)
+    File(&'a str, &'a str, &'a [u8]),
+}
+
+/// ブラウザのフォーム送信と同じ形の multipart/form-data で `POST uri` する。
+#[allow(dead_code)]
+pub async fn post_multipart(router: &Router, uri: &str, parts: &[Part<'_>]) -> TestResponse {
+    const BOUNDARY: &str = "----test-boundary-7MA4YWxkTrZu0gW";
+    let mut body = Vec::new();
+    for part in parts {
+        body.extend_from_slice(format!("--{BOUNDARY}\r\n").as_bytes());
+        match part {
+            Part::Text(name, value) => body.extend_from_slice(
+                format!("Content-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}")
+                    .as_bytes(),
+            ),
+            Part::File(name, filename, bytes) => {
+                body.extend_from_slice(
+                    format!(
+                        "Content-Disposition: form-data; name=\"{name}\"; filename=\"{filename}\"\r\n\
+                         Content-Type: application/octet-stream\r\n\r\n"
+                    )
+                    .as_bytes(),
+                );
+                body.extend_from_slice(bytes);
+            }
+        }
+        body.extend_from_slice(b"\r\n");
+    }
+    body.extend_from_slice(format!("--{BOUNDARY}--\r\n").as_bytes());
+
+    let request = Request::post(uri)
+        .header(
+            CONTENT_TYPE,
+            format!("multipart/form-data; boundary={BOUNDARY}"),
+        )
+        .body(Body::from(body))
+        .unwrap();
+    send(router, request).await
+}
+
+/// `post` テーブルの行数。
+#[allow(dead_code)]
+pub async fn post_count(db: &SqlitePool) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM post")
+        .fetch_one(db)
+        .await
+        .unwrap()
+}
+
 /// 投稿を1件 INSERT し、採番された id を返す。
+#[allow(dead_code)]
 pub async fn insert_post(db: &SqlitePool, title: &str, text: &str, image: Option<&str>) -> i64 {
     sqlx::query("INSERT INTO post (title, text, image) VALUES (?, ?, ?)")
         .bind(title)

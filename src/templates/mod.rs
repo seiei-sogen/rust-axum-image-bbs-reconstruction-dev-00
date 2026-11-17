@@ -12,11 +12,11 @@
 use askama::Template;
 
 use crate::models::post::Post;
+use crate::validators::post_form::PostFormInput;
 
 /// 一覧画面（トップページ `/`）のビューモデル。
 ///
 /// タスク文書では `IndexTemplate` と呼んでいるもの。設計書 `interfaces.rs` の名前 `IndexView` に合わせた。
-/// 入力フォームの再表示用フィールド（form / errors）は投稿作成のタスクで追加する。
 #[derive(Template)]
 #[template(path = "index.html")]
 pub struct IndexView {
@@ -26,4 +26,10 @@ pub struct IndexView {
     pub page: u32,
     /// 総ページ数。投稿0件でも 1 にする。
     pub total_pages: u32,
+    /// 投稿フォームに書き戻す入力値。バリデーション失敗時だけ中身が入り、通常は空（REQ-201）。
+    pub form: PostFormInput,
+    /// バリデーションエラーのメッセージ。空ならエラー欄を出さない（REQ-201）。
+    pub errors: Vec<String>,
+    /// 直前の操作の成功メッセージ（REQ-202）。メッセージは固定文なので `&'static str` で持つ。
+    pub success_msg: Option<&'static str>,
 }

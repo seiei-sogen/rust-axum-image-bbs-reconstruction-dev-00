@@ -1,15 +1,27 @@
 {% extends "base.html" %}
 {% block content %}
+{% if let Some(msg) = success_msg %}
+<div class="alert alert-success" role="status">{{ msg }}</div>
+{% endif %}
+
 <h1 class="h3 mb-4">新規投稿</h1>
+
+{% if !errors.is_empty() %}
+<div class="alert alert-danger" role="alert">
+  <ul class="mb-0">
+    {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
 
 <form method="post" action="/posts" enctype="multipart/form-data" class="card card-body mb-4">
   <div class="mb-3">
     <label for="title" class="form-label">タイトル</label>
-    <input id="title" name="title" class="form-control" maxlength="50">
+    <input id="title" name="title" class="form-control" maxlength="50" value="{{ form.title }}">
   </div>
   <div class="mb-3">
     <label for="text" class="form-label">本文</label>
-    <textarea id="text" name="text" class="form-control" rows="4" maxlength="500"></textarea>
+    <textarea id="text" name="text" class="form-control" rows="4" maxlength="500">{{ form.text }}</textarea>
   </div>
   <div class="mb-3">
     <label for="image" class="form-label">画像 (jpg/gif/png, 最大5MB)</label>

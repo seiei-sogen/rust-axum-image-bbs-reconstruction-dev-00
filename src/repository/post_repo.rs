@@ -70,6 +70,21 @@ pub async fn find(db: &SqlitePool, id: i64) -> AppResult<Option<Post>> {
     Ok(post)
 }
 
+/// 画像なしで投稿を1件 INSERT し、採番された id を返す。
+///
+/// 画像は id が決まってから `{id}.{拡張子}` の名前で保存するので、INSERT の時点では NULL のまま。
+/// `regist_date` / `update_date` はテーブル定義の `DEFAULT (datetime('now'))` に任せる。
+pub async fn insert(db: &SqlitePool, title: &str, text: &str) -> AppResult<i64> {
+    // `execute` は行を返さないクエリ用。戻り値の `SqliteQueryResult` から結果の情報を取り出せる
+    let result = sqlx::query("INSERT INTO post (title, text) VALUES (?, ?)")
+        .bind(title)
+        .bind(text)
+        .execute(db)
+        .await?;
+    // `last_insert_rowid()` は、この INSERT で採番された id（AUTOINCREMENT の値）
+    Ok(result.last_insert_rowid())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,5 +203,20 @@ mod tests {
         let post = find(&pool, 999).await.unwrap();
 
         assert!(post.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_insert_returns_new_id_without_image() {
+        let pool = setup_memory_pool().await;
+        let existing = insert_post(&pool, "既存").await;
+
+        let id = insert(&pool, "タイトル", "本文").await.unwrap();
+
+        assert!(id > existing, "新しい id が採番されること");
+        let post = find(&pool, id).await.unwrap().expect("投稿が見つかること");
+        assert_eq!(post.title, "タイトル");
+        assert_eq!(post.text, "本文");
+        assert_eq!(post.image, None);
+        assert_eq!(post.regist_date, post.update_date);
     }
 }
