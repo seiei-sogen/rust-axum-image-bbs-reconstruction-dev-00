@@ -190,6 +190,7 @@ async fn image_just_over_5mb_is_a_validation_error() {
     assert!(res.body.contains("画像サイズは5MB以内にしてください"));
     assert!(res.body.contains(r#"value="大きい""#));
     assert_eq!(common::post_count(&app.db).await, 0);
+    assert!(common::upload_files(&app).is_empty());
 }
 
 #[tokio::test]
@@ -209,6 +210,7 @@ async fn body_far_over_the_limit_returns_413() {
 
     assert_eq!(res.status, StatusCode::PAYLOAD_TOO_LARGE);
     assert_eq!(common::post_count(&app.db).await, 0);
+    assert!(common::upload_files(&app).is_empty());
 }
 
 #[tokio::test]
@@ -239,4 +241,147 @@ async fn non_multipart_request_returns_400() {
 
     assert_eq!(res.status, StatusCode::BAD_REQUEST);
     assert_eq!(common::post_count(&app.db).await, 0);
+}
+
+/// 投稿 id の `image` 列を読む。
+async fn image_column(db: &sqlx::SqlitePool, id: i64) -> Option<String> {
+    sqlx::query_scalar("SELECT image FROM post WHERE id = ?")
+        .bind(id)
+        .fetch_one(db)
+        .await
+        .unwrap()
+}
+
+/// 一番新しい投稿の id。
+async fn newest_id(db: &sqlx::SqlitePool) -> i64 {
+    sqlx::query_scalar("SELECT MAX(id) FROM post")
+        .fetch_one(db)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn png_is_saved_as_id_png_and_served_from_uploads() {
+    let app = common::setup().await;
+    let png = png_of_len(1000);
+
+    let res = common::post_multipart(
+        &app.router,
+        "/posts",
+        &[
+            Part::Text("title", "画像つき"),
+            Part::File("image", "photo.png", &png),
+        ],
+    )
+    .await;
+
+    assert_eq!(res.status, StatusCode::SEE_OTHER);
+    let id = newest_id(&app.db).await;
+    let filename = format!("{id}.png");
+    assert_eq!(
+        image_column(&app.db, id).await.as_deref(),
+        Some(filename.as_str())
+    );
+    assert_eq!(common::upload_files(&app), vec![filename.clone()]);
+    assert_eq!(
+        std::fs::read(app.upload_dir.path().join(&filename)).unwrap(),
+        png
+    );
+
+    // 一覧に画像が出て、その URL から保存した中身がそのまま返ってくる（REQ-013）
+    let (_, html) = common::get(&app.router, "/").await;
+    let src = format!("/uploads/{filename}");
+    assert!(html.contains(&format!(r#"src="{src}""#)));
+    let served = common::send(&app.router, Request::get(&src).body(Body::empty()).unwrap()).await;
+    assert_eq!(served.status, StatusCode::OK);
+    assert_eq!(served.content_type.as_deref(), Some("image/png"));
+    assert_eq!(served.bytes, png);
+}
+
+#[tokio::test]
+async fn saved_extension_comes_from_content_not_file_name() {
+    let app = common::setup().await;
+    let jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10];
+
+    // ファイル名は .png、中身は JPEG。さらにファイル名でディレクトリの外を狙う
+    let res = common::post_multipart(
+        &app.router,
+        "/posts",
+        &[
+            Part::Text("title", "偽の拡張子"),
+            Part::File("image", "../../evil.png", &jpeg),
+        ],
+    )
+    .await;
+
+    assert_eq!(res.status, StatusCode::SEE_OTHER);
+    let id = newest_id(&app.db).await;
+    assert_eq!(common::upload_files(&app), [format!("{id}.jpg")]);
+    let outside = app.upload_dir.path().parent().unwrap().join("evil.png");
+    assert!(!outside.exists());
+}
+
+#[tokio::test]
+async fn image_of_exactly_5mb_is_saved() {
+    let app = common::setup().await;
+    let png = png_of_len(FIVE_MB);
+
+    let res = common::post_multipart(
+        &app.router,
+        "/posts",
+        &[
+            Part::Text("title", "5MB"),
+            Part::File("image", "a.png", &png),
+        ],
+    )
+    .await;
+
+    assert_eq!(res.status, StatusCode::SEE_OTHER);
+    let id = newest_id(&app.db).await;
+    let saved = app.upload_dir.path().join(format!("{id}.png"));
+    assert_eq!(std::fs::metadata(saved).unwrap().len(), FIVE_MB as u64);
+}
+
+#[tokio::test]
+async fn non_image_file_is_rejected_without_row_or_file() {
+    let app = common::setup().await;
+
+    let res = common::post_multipart(
+        &app.router,
+        "/posts",
+        &[
+            Part::Text("title", "画像じゃない"),
+            Part::File("image", "fake.png", b"this is not an image"),
+        ],
+    )
+    .await;
+
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+    assert!(res
+        .body
+        .contains("対応していない画像形式です (jpg/gif/png)"));
+    assert!(res.body.contains(r#"value="画像じゃない""#));
+    assert_eq!(common::post_count(&app.db).await, 0);
+    assert!(common::upload_files(&app).is_empty());
+}
+
+#[tokio::test]
+async fn failed_image_save_rolls_back_the_post() {
+    let app = common::setup().await;
+    // 最初の投稿は id=1 になる。保存先 `1.png` にディレクトリを置いて、ファイルの書き込みを失敗させる
+    // （root で動くテストでも確実に失敗させるため、権限ではなくディレクトリで塞ぐ）
+    std::fs::create_dir(app.upload_dir.path().join("1.png")).unwrap();
+
+    let res = common::post_multipart(
+        &app.router,
+        "/posts",
+        &[
+            Part::Text("title", "保存失敗"),
+            Part::File("image", "a.png", &png_of_len(100)),
+        ],
+    )
+    .await;
+
+    assert_eq!(res.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(common::post_count(&app.db).await, 0, "投稿は取り消される");
 }

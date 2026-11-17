@@ -20,7 +20,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # tower-http：Tower ミドルウェアの HTTP 特化実装集。
 #   features = ["trace"] で TraceLayer が使えるようになり、
 #   axum の Router に .layer() で差し込むだけでリクエスト/レスポンスを自動ログ出力できる。
-tower-http = { version = "0.5", features = ["trace"] }
+#   features = ["fs"] で ServeDir が使えるようになり、アップロード画像のディレクトリをそのまま配信できる。
+tower-http = { version = "0.5", features = ["trace", "fs"] }
 # sqlx：Rust 向けの非同期対応 SQL クライアントライブラリ。
 #   マクロを使えばクエリをコンパイル時に検証できる（今回は実行時クエリとして使用）。
 #   有効にする features の意味:

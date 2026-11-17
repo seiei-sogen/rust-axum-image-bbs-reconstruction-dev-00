@@ -1,7 +1,8 @@
 //! アプリ共通のエラー型 `AppError` と、その `Result` 別名 `AppResult` を定義するモジュール。
 //!
-//! 現時点では DB 操作の失敗（`sqlx::Error`）、入力値のバリデーション失敗、送信サイズの超過を扱う。
-//! 画像 I/O・404 などのバリアントは、必要になったタスクで順に追加していく。
+//! 現時点では DB 操作の失敗（`sqlx::Error`）、画像ファイルの I/O 失敗（`std::io::Error`）、
+//! 入力値のバリデーション失敗、送信サイズの超過を扱う。
+//! 404 などのバリアントは、必要になったタスクで順に追加していく。
 //!
 //! 学習メモ:
 //! - Rust のエラー処理は `Result<T, E>` 型が基本。成功なら `Ok(T)`、失敗なら `Err(E)` を返す。
@@ -31,8 +32,17 @@ pub enum AppError {
     Validation(Vec<String>),
     /// リクエストのボディが上限（`build_app` の `DefaultBodyLimit`）を超えた（413）。
     PayloadTooLarge,
+    /// ファイル I/O の失敗（画像の保存・削除）。500。
+    Io(std::io::Error),
     /// DB 操作の失敗。sqlx が返したエラーをそのまま包んで持ち運ぶ。
     Sqlx(sqlx::Error),
+}
+
+/// `std::io::Error` → `AppError` への変換。これで `tokio::fs` の呼び出しにも `?` が使える。
+impl From<std::io::Error> for AppError {
+    fn from(err: std::io::Error) -> Self {
+        AppError::Io(err)
+    }
 }
 
 /// `sqlx::Error` → `AppError` への変換。
@@ -86,6 +96,11 @@ impl IntoResponse for AppError {
                 "画像サイズは5MB以内にしてください",
             )
                 .into_response(),
+            AppError::Io(err) => {
+                // ファイルパスなどの内部情報は利用者に見せず、ログにだけ残す
+                tracing::error!(error = %err, "io error");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
+            }
             AppError::Sqlx(err) => {
                 // `%err` は Display 形式でログのフィールドに埋め込む指定（`?err` なら Debug 形式）
                 tracing::error!(error = %err, "database error");

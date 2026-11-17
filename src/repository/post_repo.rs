@@ -85,6 +85,28 @@ pub async fn insert(db: &SqlitePool, title: &str, text: &str) -> AppResult<i64> 
     Ok(result.last_insert_rowid())
 }
 
+/// 投稿の画像ファイル名（例: `"5.png"`）を設定する。`None` なら NULL（画像なし）にする。
+///
+/// 学習メモ:
+/// - `Option<&str>` を `.bind()` すると、`Some("5.png")` は文字列、`None` は SQL の NULL として送られる。
+pub async fn update_image_path(db: &SqlitePool, id: i64, image: Option<&str>) -> AppResult<()> {
+    sqlx::query("UPDATE post SET image = ?, update_date = datetime('now') WHERE id = ?")
+        .bind(image)
+        .bind(id)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
+/// 投稿を1件削除する。該当行が無くてもエラーにはしない（存在確認は呼び出し側で `find` する）。
+pub async fn delete(db: &SqlitePool, id: i64) -> AppResult<()> {
+    sqlx::query("DELETE FROM post WHERE id = ?")
+        .bind(id)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,5 +240,32 @@ mod tests {
         assert_eq!(post.text, "本文");
         assert_eq!(post.image, None);
         assert_eq!(post.regist_date, post.update_date);
+    }
+
+    #[tokio::test]
+    async fn test_update_image_path_sets_and_clears_image() {
+        let pool = setup_memory_pool().await;
+        let id = insert(&pool, "タイトル", "本文").await.unwrap();
+
+        update_image_path(&pool, id, Some("1.png")).await.unwrap();
+        assert_eq!(
+            find(&pool, id).await.unwrap().unwrap().image.as_deref(),
+            Some("1.png")
+        );
+
+        update_image_path(&pool, id, None).await.unwrap();
+        assert_eq!(find(&pool, id).await.unwrap().unwrap().image, None);
+    }
+
+    #[tokio::test]
+    async fn test_delete_removes_only_that_post() {
+        let pool = setup_memory_pool().await;
+        let keep = insert_post(&pool, "残す").await;
+        let gone = insert_post(&pool, "消す").await;
+
+        delete(&pool, gone).await.unwrap();
+
+        assert!(find(&pool, gone).await.unwrap().is_none());
+        assert!(find(&pool, keep).await.unwrap().is_some());
     }
 }

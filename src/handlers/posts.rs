@@ -14,8 +14,9 @@ use crate::errors::{AppError, AppResult};
 use crate::handlers::pagination::{paginate, Pagination, PaginationQuery};
 use crate::repository::post_repo;
 use crate::state::AppState;
+use crate::storage::image_store;
 use crate::templates::IndexView;
-use crate::validators::post_form::{validate, PostFormInput};
+use crate::validators::post_form::{validate, PostFormInput, ValidatedImage};
 
 /// 投稿作成に成功したあとのリダイレクト先。一覧の上に「投稿しました」を出す（REQ-202）。
 const CREATED_REDIRECT: &str = "/?notice=created";
@@ -83,7 +84,8 @@ pub async fn list(
 /// 流れ:
 /// 1. multipart を読んで生の入力 `PostFormInput` にする
 /// 2. `validate` で検証する。失敗なら入力値を残したままフォームを 400 で再表示（REQ-201）
-/// 3. 合格なら INSERT して、303 See Other で一覧へリダイレクト（PRG パターン）
+/// 3. 合格なら INSERT → 画像があれば保存して `image` 列を UPDATE（保存に失敗したら投稿を取り消す）
+/// 4. 303 See Other で一覧へリダイレクト（PRG パターン）
 ///
 /// 学習メモ:
 /// - PRG（Post / Redirect / Get）: POST の応答で直接 HTML を返すと、ブラウザの再読み込みで
@@ -114,10 +116,44 @@ pub async fn create(
         Err(err) => return Err(err),
     };
 
-    // 画像の保存は TASK-0011 で追加する。ここではタイトルと本文だけを保存する
-    post_repo::insert(&state.db, form.title(), form.text()).await?;
+    // 画像のファイル名には投稿 id を使うので、先に画像なしで INSERT して id を決める
+    let id = post_repo::insert(&state.db, form.title(), form.text()).await?;
+
+    // `if let Some(x) = ...` は Option が Some のときだけ中に入る書き方
+    if let Some(image) = form.image() {
+        if let Err(err) = attach_image(&state, id, image).await {
+            // 画像を保存できなかった投稿は残さない（EDGE-005）。元のエラー（多くは I/O の 500）を返す
+            rollback_create(&state, id).await;
+            return Err(err);
+        }
+    }
 
     Ok(Redirect::to(CREATED_REDIRECT).into_response())
+}
+
+/// 画像を `{id}.{拡張子}` で保存し、そのファイル名を投稿の `image` 列に記録する。
+async fn attach_image(state: &AppState, id: i64, image: &ValidatedImage) -> AppResult<()> {
+    let filename = image_store::save_image(&state.upload_dir, id, image).await?;
+    post_repo::update_image_path(&state.db, id, Some(&filename)).await
+}
+
+/// 画像の保存に失敗した投稿を取り消す（補償処理）。書きかけのファイルと INSERT 済みの行を消す。
+///
+/// SQLite の1文はそれぞれ原子的に実行されるが、「INSERT → ファイル保存 → UPDATE」の3つをまとめて
+/// 取り消す仕組みはないので、失敗したら自分で DELETE して元に戻す。
+/// ここでの失敗はログにだけ残す。呼び出し元は最初のエラーのほうを利用者に返す。
+async fn rollback_create(state: &AppState, id: i64) {
+    tracing::warn!(
+        post_id = id,
+        "image could not be saved, rolling back the post"
+    );
+    // `if let Err(err) = ...` は「失敗したときだけ」処理する書き方。成功（Ok）なら何もしない
+    if let Err(err) = image_store::delete_image(&state.upload_dir, id).await {
+        tracing::warn!(post_id = id, error = ?err, "rollback: failed to remove image file");
+    }
+    if let Err(err) = post_repo::delete(&state.db, id).await {
+        tracing::warn!(post_id = id, error = ?err, "rollback: failed to delete post");
+    }
 }
 
 /// 一覧ページ（投稿フォームつき）の表示内容を組み立てる。フォームは空、メッセージはなし。

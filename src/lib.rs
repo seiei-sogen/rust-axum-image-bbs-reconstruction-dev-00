@@ -22,6 +22,7 @@ pub mod handlers;
 pub mod models;
 pub mod repository;
 pub mod state;
+pub mod storage;
 pub mod templates;
 pub mod validators;
 
@@ -30,6 +31,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 
 use crate::handlers::posts;
@@ -55,6 +57,10 @@ const MULTIPART_OVERHEAD_BYTES: usize = 64 * 1024;
 pub fn build_app(state: AppState) -> Router {
     // `state` をルーターへムーブする前に、必要な値（usize はコピーされる）を取り出しておく
     let max_body_bytes = state.config.max_image_bytes + MULTIPART_OVERHEAD_BYTES;
+    // `/uploads/5.png` → `{upload_dir}/5.png` を返す静的ファイル配信（REQ-013）。
+    // ServeDir は `..` を含むパスを拒否するので、upload_dir の外のファイルは読めない。
+    // `clone()` するのは、`state` 本体はこの後 `with_state` へムーブするため。
+    let uploads = ServeDir::new(state.upload_dir.clone());
 
     // ---------- ルーター組み立て ----------
     //
@@ -71,6 +77,9 @@ pub fn build_app(state: AppState) -> Router {
     Router::new()
         .route("/", get(posts::list))
         .route("/posts", post(posts::create))
+        // `route` は「この URL にこのハンドラ関数」、`nest_service` は「この URL 以下を丸ごとこのサービスに」。
+        // ServeDir には `/uploads` を取り除いた残り（`/5.png`）が渡る。
+        .nest_service("/uploads", uploads)
         // multipart の読み取りはこの上限で打ち切られる（超えたら 413）
         .layer(DefaultBodyLimit::max(max_body_bytes))
         .layer(TraceLayer::new_for_http())

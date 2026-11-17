@@ -156,7 +156,7 @@ articles/
 
 - [x] [TASK-0009](TASK-0009.md): バリデータと ImageExt 型 — TDD, 4h ✅ 完了 (2026-11-17)
 - [x] [TASK-0010](TASK-0010.md): POST /posts 投稿作成（画像なし版） — TDD, 4h ✅ 完了 (2026-11-17)
-- [ ] [TASK-0011](TASK-0011.md): 画像アップロード + ImageStore + ロールバック — TDD, 4h
+- [x] [TASK-0011](TASK-0011.md): 画像アップロード + ImageStore + ロールバック — TDD, 4h ✅ 完了 (2026-11-17)
 - [ ] [TASK-0012](TASK-0012.md): AppError + IntoResponse 実装 — TDD, 4h
 
 📝 **Phase 1c 完了時に書くまとめ記事**: 「まとめ③ 画像アップロードとエラー処理を整える」

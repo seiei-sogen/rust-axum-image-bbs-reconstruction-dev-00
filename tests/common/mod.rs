@@ -85,6 +85,10 @@ pub struct TestResponse {
     pub location: Option<String>,
     /// 本文。HTML を検査しやすいよう文字列にしておく（UTF-8 でない部分は置き換え文字になる）。
     pub body: String,
+    /// 本文の生のバイト列（画像の中身を比べるとき用）。
+    pub bytes: Vec<u8>,
+    /// `Content-Type` ヘッダ。
+    pub content_type: Option<String>,
 }
 
 /// 任意のリクエストをルーターへ投げ、ステータス・Location・本文を返す。
@@ -92,10 +96,14 @@ pub struct TestResponse {
 pub async fn send(router: &Router, request: Request<Body>) -> TestResponse {
     let response = router.clone().oneshot(request).await.unwrap();
     let status = response.status();
-    let location = response
-        .headers()
-        .get(LOCATION)
-        .map(|value| value.to_str().unwrap().to_string());
+    let header = |name| {
+        response
+            .headers()
+            .get(name)
+            .map(|value: &axum::http::HeaderValue| value.to_str().unwrap().to_string())
+    };
+    let location = header(LOCATION);
+    let content_type = header(CONTENT_TYPE);
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
@@ -103,7 +111,20 @@ pub async fn send(router: &Router, request: Request<Body>) -> TestResponse {
         status,
         location,
         body: String::from_utf8_lossy(&bytes).into_owned(),
+        bytes: bytes.to_vec(),
+        content_type,
     }
+}
+
+/// UPLOAD_DIR にあるファイル名の一覧（名前順）。
+#[allow(dead_code)]
+pub fn upload_files(app: &TestApp) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(app.upload_dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    names
 }
 
 /// multipart/form-data の1欄。
