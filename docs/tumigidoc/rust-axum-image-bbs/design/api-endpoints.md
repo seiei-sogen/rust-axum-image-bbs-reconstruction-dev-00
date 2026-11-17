@@ -171,7 +171,7 @@ http://localhost:3000
 | 入力状態 | 動作 |
 |---|---|
 | image なし、delete_image=off | `image` 列は不変 |
-| image あり | 旧拡張子の画像ファイルを削除し、`uploads/{id}.{新ext}` に上書き保存・`image` 列更新 |
+| image あり | `uploads/{id}.{新ext}` に保存 → `image` 列更新 → 拡張子の違う旧ファイルを削除（保存に失敗しても元の画像を失わない順序） |
 | delete_image=on | `image` 列を NULL に更新し、対応ファイルを削除 |
 | image あり かつ delete_image=on | image を優先（delete_image は無視） 🟡 |
 
@@ -204,8 +204,10 @@ http://localhost:3000
 
 **サーバ処理**:
 1. `find(id)` で存在確認（なければ 404）
-2. `image` がある場合は `tokio::fs::remove_file(...)` で物理削除（失敗は警告ログのみ）
-3. `DELETE FROM post WHERE id = ?`
+2. `DELETE FROM post WHERE id = ?`
+3. 画像ファイルを `tokio::fs::remove_file(...)` で物理削除（失敗は警告ログのみ）
+
+行を先に消すのは、ファイル削除後に DELETE が失敗して「行だけ残り画像が壊れる」状態を避けるため（実装時に順序を入れ替えた）。
 
 **異常系レスポンス**:
 | ステータス | 条件 | 関連 |
@@ -276,8 +278,8 @@ HTML エンドポイントなのでAPIバージョニングは不要。
 | `GET /` | `handlers::posts::list` | `PostRepo::list` + `count` |
 | `POST /posts` | `handlers::posts::create` | `validate` → `insert` → `save_image` → `update_image_path`（失敗時 `delete`） |
 | `GET /posts/:id/edit` | `handlers::posts::edit_form` | `PostRepo::find` |
-| `POST /posts/:id/edit` | `handlers::posts::edit_submit` | `find` → `validate` →（必要時）`save_image`/`delete_image` → `update` |
-| `POST /posts/:id/delete` | `handlers::posts::delete` | `find` → `delete_image`（任意） → `delete` |
+| `POST /posts/:id/edit` | `handlers::posts::edit_submit` | `find` → `validate` →（差し替え時）`save_image` → `update` →（必要時）旧ファイル削除 |
+| `POST /posts/:id/delete` | `handlers::posts::delete` | `find` → `delete` → `delete_image` |
 | `GET /uploads/*` | `tower-http::ServeDir` | OS ファイルシステム |
 
 ---

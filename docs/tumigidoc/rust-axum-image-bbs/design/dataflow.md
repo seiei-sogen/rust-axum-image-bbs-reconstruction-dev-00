@@ -134,7 +134,7 @@ sequenceDiagram
                 H-->>B: 500 + エラー画面
             else 保存成功
                 FS-->>S: Ok
-                S-->>H: 相対パス "uploads/{id}.{ext}"
+                S-->>H: ファイル名 "{id}.{ext}"（DB にはこの形で保存し、表示時に /uploads/ を付ける）
                 H->>R: update_image(new_id, path)
                 R->>D: UPDATE post SET image=? WHERE id=?
             end
@@ -259,12 +259,10 @@ sequenceDiagram
             H-->>B: 404
         else 存在
             R-->>H: Some(post)
-            opt image NOT NULL
-                H->>S: delete_image(post.image)
-                S->>FS: tokio::fs::remove_file
-            end
             H->>R: delete(id)
             R->>D: DELETE FROM post WHERE id=?
+            H->>S: delete_image(id)
+            S->>FS: tokio::fs::remove_file（失敗は警告ログのみ）
             H-->>B: 303 See Other → GET /
         end
     end

@@ -267,8 +267,11 @@ pub async fn edit_submit(
 
 /// `POST /posts/{id}/delete` 投稿を画像ファイルごと削除する（REQ-010 / REQ-102）。
 ///
-/// 順序は「画像ファイル → DB の行」。ファイルを消せなかった場合も警告ログだけ残して行は消す。
-/// 逆に行が残ってファイルだけ消えると、一覧に壊れた画像が出てしまう。誰も参照しないファイルが残るほうがまし。
+/// 順序は「DB の行 → 画像ファイル」。先に行を消しておけば、ファイルを消せなかったときに残るのは
+/// 誰も参照しないファイルだけになる（その場合は警告ログを残し、利用者への応答は成功にする）。
+/// 逆の順（ファイル → 行）だと、ファイルを消した後で DELETE が失敗したときに行だけが残り、
+/// 一覧に壊れた画像が出てしまう。id は AUTOINCREMENT で再利用されないので、
+/// 残ったファイルが別の投稿の画像として使われることもない。
 ///
 /// 学習メモ:
 /// - このルートは POST にしか登録していないので、`GET /posts/{id}/delete` には axum が自動で
@@ -281,15 +284,15 @@ pub async fn delete(State(state): State<AppState>, Path(id): Path<i64>) -> AppRe
     post_repo::find(&state.db, id)
         .await?
         .ok_or(AppError::NotFound)?;
-    remove_image_files(&state, id, None).await;
     post_repo::delete(&state.db, id).await?;
+    remove_image_files(&state, id, None).await;
     tracing::info!("post deleted");
     Ok(Redirect::to(DELETED_REDIRECT).into_response())
 }
 
 /// 投稿 id の画像ファイルを消す（`keep` の拡張子は残す。`None` なら全部消す）。
 ///
-/// 呼ぶのは DB がもうそのファイルを参照しない（またはこれから行ごと消す）とき。
+/// 呼ぶのは、DB がもうそのファイルを参照しなくなった後（画像列を更新した後、または行を消した後）。
 /// 消せなくても残るのは誰も参照しないファイルだけなので、利用者への応答は失敗にせず警告ログを残す。
 async fn remove_image_files(state: &AppState, id: i64, keep: Option<ImageExt>) {
     if let Err(err) = image_store::delete_image_except(&state.upload_dir, id, keep).await {
