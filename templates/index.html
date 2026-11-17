@@ -45,6 +45,9 @@
           <h3 class="h5 card-title">{{ post.title }}</h3>
           <p class="card-text">{{ post.text }}</p>
           <small class="text-muted">{{ post.regist_date }}</small>
+          <div class="mt-2">
+            <a href="/posts/{{ post.id }}/edit" class="btn btn-primary btn-sm">編集</a>
+          </div>
         </div>
       </div>
     </article>

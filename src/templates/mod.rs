@@ -35,6 +35,25 @@ pub struct IndexView {
     pub success_msg: Option<&'static str>,
 }
 
+/// 編集画面（`/posts/{id}/edit`）のビューモデル。
+///
+/// タスク文書では `EditTemplate` と呼んでいるもの。`IndexView` と同じく設計書の名前 `EditView` に合わせた。
+///
+/// 学習メモ:
+/// - `post`（DB に保存されている今の値）と `form`（フォームに書き戻す値）を分けて持つ。
+///   初めて開いたときは `form` に `post` の値をコピーして入れる。
+///   バリデーションで差し戻したときは `form` に利用者の入力値を入れ、`post` は画像プレビューと送信先 URL に使う。
+#[derive(Template)]
+#[template(path = "edit.html")]
+pub struct EditView {
+    /// 編集対象の投稿（DB の値）。送信先 URL の id と、今の画像のプレビューに使う。
+    pub post: Post,
+    /// フォームに表示する入力値（REQ-201）。
+    pub form: PostFormInput,
+    /// バリデーションエラーのメッセージ。空ならエラー欄を出さない（REQ-201）。
+    pub errors: Vec<String>,
+}
+
 /// エラーページ（400 / 404 / 413 / 500）のビューモデル。`AppError` の `IntoResponse` から使う。
 #[derive(Template)]
 #[template(path = "error.html")]

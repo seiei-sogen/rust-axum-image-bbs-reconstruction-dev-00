@@ -165,7 +165,7 @@ articles/
 
 > ゴール: CRUD のうち U / D を完成させ、画像掲示板として一通り使える状態に。
 
-- [ ] [TASK-0013](TASK-0013.md): GET /posts/:id/edit 編集画面表示 — TDD, 4h
+- [x] [TASK-0013](TASK-0013.md): GET /posts/:id/edit 編集画面表示 — TDD, 4h ✅ 完了 (2026-11-17)
 - [ ] [TASK-0014](TASK-0014.md): POST /posts/:id/edit 編集処理 — TDD, 4h
 - [ ] [TASK-0015](TASK-0015.md): 画像のみ削除（delete_image チェックボックス）対応 — TDD, 4h
 - [ ] [TASK-0016](TASK-0016.md): POST /posts/:id/delete 削除処理 — TDD, 4h

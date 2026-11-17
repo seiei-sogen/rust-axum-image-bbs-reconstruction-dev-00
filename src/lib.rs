@@ -79,6 +79,8 @@ pub fn build_app(state: AppState) -> Router {
     Router::new()
         .route("/", get(posts::list))
         .route("/posts", post(posts::create))
+        // `:id` はパスパラメータ。ハンドラ側で `Path<i64>` として受け取る
+        .route("/posts/:id/edit", get(posts::edit_form))
         // `route` は「この URL にこのハンドラ関数」、`nest_service` は「この URL 以下を丸ごとこのサービスに」。
         // ServeDir には `/uploads` を取り除いた残り（`/5.png`）が渡る。
         .nest_service("/uploads", uploads)

@@ -5,7 +5,7 @@
 //! ページ計算は `handlers::pagination`、入力の検証は `validators::post_form` に任せる。
 
 use axum::extract::multipart::{Multipart, MultipartRejection};
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
 use serde::Deserialize;
@@ -15,7 +15,7 @@ use crate::handlers::pagination::{paginate, Pagination, PaginationQuery};
 use crate::repository::post_repo;
 use crate::state::AppState;
 use crate::storage::image_store;
-use crate::templates::IndexView;
+use crate::templates::{EditView, IndexView};
 use crate::validators::post_form::{validate, PostFormInput, ValidatedImage};
 
 /// 投稿作成に成功したあとのリダイレクト先。一覧の上に「投稿しました」を出す（REQ-202）。
@@ -154,6 +154,31 @@ async fn rollback_create(state: &AppState, id: i64) {
     if let Err(err) = post_repo::delete(&state.db, id).await {
         tracing::warn!(post_id = id, error = ?err, "rollback: failed to delete post");
     }
+}
+
+/// `GET /posts/{id}/edit` 編集フォームを、今の title / text / 画像を入れた状態で表示する（REQ-008）。
+///
+/// 学習メモ:
+/// - `Path(id): Path<i64>` は、ルート `/posts/:id/edit` の `:id` 部分を i64 に変換して受け取る抽出器。
+///   `/posts/abc/edit` のように数値にできない値なら、ハンドラは呼ばれず axum が 400 を返す。
+/// - `post_repo::find` は `AppResult<Option<Post>>` を返す。
+///   1つ目の `?` で DB エラー（Err）を返し、`ok_or(AppError::NotFound)` で「見つからない（None）」を
+///   `Err(AppError::NotFound)` に変え、2つ目の `?` でそれを返す。結果、`post` には中身の `Post` だけが入る。
+pub async fn edit_form(State(state): State<AppState>, Path(id): Path<i64>) -> AppResult<EditView> {
+    let post = post_repo::find(&state.db, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    // `post` はこの後 EditView へムーブするので、フォーム用の値は clone で複製しておく
+    let form = PostFormInput {
+        title: post.title.clone(),
+        text: post.text.clone(),
+        ..PostFormInput::default()
+    };
+    Ok(EditView {
+        post,
+        form,
+        errors: Vec::new(),
+    })
 }
 
 /// 一覧ページ（投稿フォームつき）の表示内容を組み立てる。フォームは空、メッセージはなし。

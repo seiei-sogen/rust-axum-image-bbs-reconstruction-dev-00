@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}投稿の編集 | 画像掲示板{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">投稿の編集（ID: {{ post.id }}）</h1>
+
+{% if !errors.is_empty() %}
+<div class="alert alert-danger" role="alert">
+  <ul class="mb-0">
+    {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<form method="post" action="/posts/{{ post.id }}/edit" enctype="multipart/form-data" class="card card-body mb-4">
+  <div class="mb-3">
+    <label for="title" class="form-label">タイトル</label>
+    <input id="title" name="title" class="form-control" maxlength="50" value="{{ form.title }}">
+  </div>
+  <div class="mb-3">
+    <label for="text" class="form-label">本文</label>
+    <textarea id="text" name="text" class="form-control" rows="4" maxlength="500">{{ form.text }}</textarea>
+  </div>
+  {% if let Some(img) = post.image %}
+  <div class="mb-3">
+    <p class="form-label mb-1">現在の画像</p>
+    <img src="/uploads/{{ img }}" class="img-fluid img-thumbnail" alt="現在の画像">
+  </div>
+  <div class="form-check mb-3">
+    <input id="delete_image" type="checkbox" name="delete_image" value="on" class="form-check-input"{% if form.delete_image %} checked{% endif %}>
+    <label for="delete_image" class="form-check-label">画像を削除する</label>
+    <div class="form-text">新しい画像を選んだ場合は、削除ではなく差し替えになります。</div>
+  </div>
+  {% endif %}
+  <div class="mb-3">
+    <label for="image" class="form-label">新しい画像 (jpg/gif/png, 最大5MB)</label>
+    <input id="image" type="file" name="image" accept="image/jpeg,image/gif,image/png" class="form-control">
+  </div>
+  <div>
+    <button type="submit" class="btn btn-primary" onclick="return confirm('登録します。よろしいですか？');">登録</button>
+    <a href="/" class="btn btn-secondary">戻る</a>
+  </div>
+</form>
+{% endblock %}
