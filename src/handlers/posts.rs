@@ -23,6 +23,8 @@ use crate::validators::post_form::{validate, ImageChange, PostFormInput, Validat
 const CREATED_REDIRECT: &str = "/?notice=created";
 /// 編集に成功したあとのリダイレクト先。一覧の上に「更新しました」を出す。
 const UPDATED_REDIRECT: &str = "/?notice=updated";
+/// 削除に成功したあとのリダイレクト先。一覧の上に「削除しました」を出す。
+const DELETED_REDIRECT: &str = "/?notice=deleted";
 
 /// `?notice=created` を受け取るクエリ型。PRG のリダイレクト先で、直前の操作の結果を知らせる。
 #[derive(Debug, Deserialize)]
@@ -43,6 +45,7 @@ pub struct NoticeQuery {
 pub enum Notice {
     Created,
     Updated,
+    Deleted,
 }
 
 impl Notice {
@@ -50,6 +53,7 @@ impl Notice {
         match self {
             Notice::Created => "投稿しました",
             Notice::Updated => "更新しました",
+            Notice::Deleted => "削除しました",
         }
     }
 }
@@ -246,6 +250,26 @@ pub async fn edit_submit(
     }
 
     Ok(Redirect::to(UPDATED_REDIRECT).into_response())
+}
+
+/// `POST /posts/{id}/delete` 投稿を画像ファイルごと削除する（REQ-010 / REQ-102）。
+///
+/// 順序は「画像ファイル → DB の行」。ファイルを消せなかった場合も警告ログだけ残して行は消す。
+/// 逆に行が残ってファイルだけ消えると、一覧に壊れた画像が出てしまう。誰も参照しないファイルが残るほうがまし。
+///
+/// 学習メモ:
+/// - このルートは POST にしか登録していないので、`GET /posts/{id}/delete` には axum が自動で
+///   405 Method Not Allowed を返す（NFR-105）。リンクを踏んだりクローラが巡回したりしただけで消えることはない。
+/// - 画像の有無にかかわらずファイル削除を呼ぶ。`delete_image_except` は無いファイルを無視するので、
+///   画像なしの投稿でも害はなく、過去の失敗で残ったファイルがあれば一緒に片付く。
+pub async fn delete(State(state): State<AppState>, Path(id): Path<i64>) -> AppResult<Response> {
+    // 値は使わず、存在の確認だけ。無ければ 404
+    post_repo::find(&state.db, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    remove_image_files(&state, id, None).await;
+    post_repo::delete(&state.db, id).await?;
+    Ok(Redirect::to(DELETED_REDIRECT).into_response())
 }
 
 /// 投稿 id の画像ファイルを消す（`keep` の拡張子は残す。`None` なら全部消す）。

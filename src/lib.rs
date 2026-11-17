@@ -85,6 +85,8 @@ pub fn build_app(state: AppState) -> Router {
             "/posts/:id/edit",
             get(posts::edit_form).post(posts::edit_submit),
         )
+        // 削除は POST だけ。GET を登録しないので、GET で来たら axum が 405 を返す（NFR-105）
+        .route("/posts/:id/delete", post(posts::delete))
         // `route` は「この URL にこのハンドラ関数」、`nest_service` は「この URL 以下を丸ごとこのサービスに」。
         // ServeDir には `/uploads` を取り除いた残り（`/5.png`）が渡る。
         .nest_service("/uploads", uploads)
