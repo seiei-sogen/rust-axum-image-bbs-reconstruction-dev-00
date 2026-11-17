@@ -156,7 +156,8 @@ status "$BASE/" > /dev/null
 lacks "rejected non-image post left no row" "$WORK/body" 'fake image'
 lacks "rejected 6MB post left no row" "$WORK/body" 'too big'
 if [[ -n "$UPLOADS" ]]; then
-    check "rejected uploads left no file" 3 "$(find "$UPLOADS" -type f | wc -l | tr -d ' ')"
+    # リポジトリの uploads/ を指したときに入っている .gitkeep は数えない
+    check "rejected uploads left no file" 3 "$(find "$UPLOADS" -type f ! -name .gitkeep | wc -l | tr -d ' ')"
 else
     echo "  skip rejected uploads left no file (set E2E_UPLOAD_DIR to check)"
 fi
