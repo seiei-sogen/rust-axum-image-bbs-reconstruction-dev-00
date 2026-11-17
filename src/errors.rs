@@ -8,6 +8,11 @@
 //! - `?` 演算子は「`Err(e)` なら `From::from(e)` で呼び出し元のエラー型へ変換して即 return する」糖衣構文。
 //!   下の `impl From<sqlx::Error> for AppError` があるおかげで、
 //!   `AppResult` を返す関数の中で `sqlx` の呼び出しに `?` を付けるだけで `AppError::Sqlx` に包まれる。
+//! - `impl IntoResponse for AppError` があるので、ハンドラは `AppResult<T>` をそのまま返せる。
+//!   axum は `Ok(T)` なら `T` を、`Err(AppError)` なら下の `into_response` の結果をレスポンスにする。
+
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 
 /// アプリ全体で使うエラー型。
 ///
@@ -27,6 +32,23 @@ pub enum AppError {
 impl From<sqlx::Error> for AppError {
     fn from(err: sqlx::Error) -> Self {
         AppError::Sqlx(err)
+    }
+}
+
+/// `AppError` を HTTP レスポンスへ変換する。
+///
+/// 学習メモ:
+/// - `self` を値で受け取る（所有権を消費する）ので、中の `sqlx::Error` を取り出してそのまま使える。
+/// - DB の生のエラー文には SQL やファイルパスが含まれうるので、利用者には出さずログにだけ残す。
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        match self {
+            AppError::Sqlx(err) => {
+                // `%err` は Display 形式でログのフィールドに埋め込む指定（`?err` なら Debug 形式）
+                tracing::error!(error = %err, "database error");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
+            }
+        }
     }
 }
 

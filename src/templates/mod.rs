@@ -11,10 +11,19 @@
 
 use askama::Template;
 
+use crate::models::post::Post;
+
 /// 一覧画面（トップページ `/`）のビューモデル。
 ///
 /// タスク文書では `IndexTemplate` と呼んでいるもの。設計書 `interfaces.rs` の名前 `IndexView` に合わせた。
-/// 投稿一覧やページ情報のフィールドは後続タスクで追加する。
+/// 入力フォームの再表示用フィールド（form / errors）は投稿作成のタスクで追加する。
 #[derive(Template)]
 #[template(path = "index.html")]
-pub struct IndexView {}
+pub struct IndexView {
+    /// このページに表示する投稿（新しい順）。テンプレートの `{% for post in posts %}` で回す。
+    pub posts: Vec<Post>,
+    /// 現在のページ番号（1始まり）。
+    pub page: u32,
+    /// 総ページ数。投稿0件でも 1 にする。
+    pub total_pages: u32,
+}

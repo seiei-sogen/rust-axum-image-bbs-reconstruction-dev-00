@@ -19,5 +19,24 @@
 </form>
 
 <h2 class="h4 mb-3">投稿一覧</h2>
-<p class="text-muted">投稿がまだありません</p>
+{% if posts.is_empty() %}
+  <p class="text-muted">投稿がまだありません</p>
+{% else %}
+  <div class="row">
+    {% for post in posts %}
+    <article class="col-md-6 mb-3">
+      <div class="card">
+        {% match post.image %}{% when Some with (path) %}
+        <img src="/uploads/{{ path }}" class="card-img-top" alt="">
+        {% when None %}{% endmatch %}
+        <div class="card-body">
+          <h3 class="h5 card-title">{{ post.title }}</h3>
+          <p class="card-text">{{ post.text }}</p>
+          <small class="text-muted">{{ post.regist_date }}</small>
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+{% endif %}
 {% endblock %}

@@ -44,3 +44,11 @@ askama = "0.12"
 # askama_axum：Askama のテンプレート構造体に axum の IntoResponse を実装させる連携クレート。
 #   これを入れると、ハンドラはテンプレート構造体をそのまま return するだけで HTML を返せる。
 askama_axum = "0.4"
+
+# dev-dependencies はテスト（cargo test）のときだけ使うクレート。本番バイナリには含まれない。
+[dev-dependencies]
+# tower：`ServiceExt::oneshot` で、サーバを listen せずにルーターへ直接リクエストを1回投げるために使う。
+#   axum 0.7.9 自身が依存している tower 0.5 に揃えて、同じクレートを二重にビルドしないようにする。
+tower = { version = "0.5", features = ["util"] }
+# tempfile：テストごとに使い捨ての一時ディレクトリ（UPLOAD_DIR 用）を作る。drop 時に自動で削除される。
+tempfile = "3"

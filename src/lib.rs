@@ -18,6 +18,7 @@
 
 pub mod config;
 pub mod errors;
+pub mod handlers;
 pub mod models;
 pub mod repository;
 pub mod state;
@@ -26,8 +27,8 @@ pub mod templates;
 use axum::{extract::DefaultBodyLimit, routing::get, Router};
 use tower_http::trace::TraceLayer;
 
+use crate::handlers::posts;
 use crate::state::AppState;
-use crate::templates::IndexView;
 
 /// アプリのルーター（URL とハンドラの対応表 + ミドルウェア）を組み立てる。
 ///
@@ -52,18 +53,8 @@ pub fn build_app(state: AppState) -> Router {
     //   内部の詳細は DEBUG レベルで出るため、tower_http=debug にしておくと見やすい。
     // - AppState は Router::with_state で各ハンドラへ共有する。
     Router::new()
-        .route("/", get(root_handler))
+        .route("/", get(posts::list))
         .layer(DefaultBodyLimit::max(max_body_bytes))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
-}
-
-/// ルート `/` の GET ハンドラ。投稿フォームと空の一覧を描画する。
-///
-/// axum は `IntoResponse` を実装した任意の型を返せる。
-/// 以前は `&'static str` を返して `text/plain; charset=utf-8` になっていたが、
-/// Askama の `#[derive(Template)]` は（askama_axum 経由で）テンプレート構造体に `IntoResponse` を実装するので、
-/// 構造体をそのまま返すだけで `text/html; charset=utf-8` のレスポンスになる。
-async fn root_handler() -> IndexView {
-    IndexView {}
 }
