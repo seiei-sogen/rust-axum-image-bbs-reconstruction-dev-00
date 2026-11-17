@@ -23,7 +23,7 @@
   {% if let Some(img) = post.image %}
   <div class="mb-3">
     <p class="form-label mb-1">現在の画像</p>
-    <img src="/uploads/{{ img }}" class="img-fluid img-thumbnail" alt="現在の画像">
+    <img src="/uploads/{{ img }}?v={{ post.update_date.and_utc().timestamp() }}" class="img-fluid img-thumbnail" alt="現在の画像">
   </div>
   <div class="form-check mb-3">
     <input id="delete_image" type="checkbox" name="delete_image" value="on" class="form-check-input"{% if form.delete_image %} checked{% endif %}>

@@ -67,7 +67,7 @@ async fn edit_form_shows_current_values() {
     assert!(html.contains(&format!(r#"action="/posts/{id}/edit""#)));
     assert!(html.contains("multipart/form-data"));
     // 今の画像のプレビューと、画像だけを消すチェックボックス（REQ-103）
-    assert!(html.contains(r#"src="/uploads/1.png""#));
+    assert!(html.contains(r#"src="/uploads/1.png?v="#));
     assert!(html.contains(r#"name="delete_image""#));
     // 登録前の確認ダイアログと、一覧へ戻るリンク
     assert!(html.contains("登録します。よろしいですか？"));
@@ -277,7 +277,7 @@ async fn invalid_edit_rerenders_the_form_with_400_and_changes_nothing() {
     // 入力値は残り、送信先と今の画像のプレビューは元の投稿のまま
     assert!(res.body.contains(">入力した本文</textarea>"));
     assert!(res.body.contains(&format!(r#"action="/posts/{id}/edit""#)));
-    assert!(res.body.contains(&format!(r#"src="/uploads/{id}.jpg""#)));
+    assert!(res.body.contains(&format!(r#"src="/uploads/{id}.jpg?v="#)));
     assert_eq!(row(&app, id).await, untouched_row(id, "jpg"));
     assert_eq!(common::upload_files(&app), [format!("{id}.jpg")]);
 }
@@ -409,6 +409,84 @@ async fn invalid_edit_keeps_the_image_and_the_checked_checkbox() {
         res.body.contains(" checked>"),
         "チェック状態も入力値として残る"
     );
+    assert_eq!(row(&app, id).await, untouched_row(id, "jpg"));
+    assert_eq!(upload(&app, &format!("{id}.jpg")), JPEG);
+}
+
+/// 一覧の HTML から、投稿 `id` の画像の URL（`?v=...` を含む）を取り出す。
+fn image_url(html: &str, id: i64) -> String {
+    let start = html
+        .find(&format!("/uploads/{id}."))
+        .expect("画像の URL があること");
+    let end = start + html[start..].find('"').unwrap();
+    html[start..end].to_string()
+}
+
+#[tokio::test]
+async fn replacing_an_image_with_the_same_format_changes_its_url() {
+    let app = common::setup().await;
+    let id = create_with_image(&app, PNG).await;
+    // 更新時刻は秒単位なので、過去の時刻にしてから差し替える
+    sqlx::query("UPDATE post SET update_date = '2000-01-01 00:00:00' WHERE id = ?")
+        .bind(id)
+        .execute(&app.db)
+        .await
+        .unwrap();
+    let (_, before) = common::get(&app.router, "/").await;
+
+    let res = common::post_multipart(
+        &app.router,
+        &format!("/posts/{id}/edit"),
+        &[
+            Part::Text("title", "古いタイトル"),
+            Part::File("image", "new.png", b"\x89PNG\r\n\x1a\nanother png"),
+        ],
+    )
+    .await;
+    assert_eq!(res.status, StatusCode::SEE_OTHER);
+    let (_, after) = common::get(&app.router, "/").await;
+
+    // ファイル名は同じ {id}.png のまま。URL が変わらないと、ブラウザは保存済みの古い画像を出し続ける
+    assert_eq!(common::upload_files(&app), [format!("{id}.png")]);
+    assert_ne!(image_url(&before, id), image_url(&after, id));
+}
+
+#[tokio::test]
+async fn edit_form_escapes_the_stored_title_and_text() {
+    let app = common::setup().await;
+    let id = common::insert_post(
+        &app.db,
+        r#""><script>alert(1)</script>"#,
+        "</textarea><script>alert(2)</script>",
+        None,
+    )
+    .await;
+
+    let (status, html) = common::get(&app.router, &format!("/posts/{id}/edit")).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(!html.contains("<script>"));
+    assert!(html.contains("&lt;script&gt;alert(1)"));
+    assert!(html.contains("&lt;script&gt;alert(2)"));
+}
+
+#[tokio::test]
+async fn nul_in_the_title_is_a_validation_error_and_keeps_the_old_image() {
+    let app = common::setup().await;
+    let id = create_with_image(&app, JPEG).await;
+
+    let res = common::post_multipart(
+        &app.router,
+        &format!("/posts/{id}/edit"),
+        &[
+            Part::Text("title", "\0abc"),
+            Part::File("image", "new.jpg", b"\xFF\xD8\xFF\xE0new jpeg"),
+        ],
+    )
+    .await;
+
+    // DB の CHECK 制約で 500 になる前に、検証で止まる。同じ拡張子の画像も上書きされない
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
     assert_eq!(row(&app, id).await, untouched_row(id, "jpg"));
     assert_eq!(upload(&app, &format!("{id}.jpg")), JPEG);
 }

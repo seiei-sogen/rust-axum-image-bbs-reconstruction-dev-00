@@ -160,6 +160,14 @@ pub fn validate(input: &PostFormInput, config: &AppConfig) -> AppResult<Validate
         errors.push(format!("本文は{TEXT_MAX_CHARS}文字以内で入力してください"));
     }
 
+    // NUL 文字（U+0000）は受け付けない。
+    // SQLite の length() は NUL の手前で数えるのをやめるので、"\0abc" は Rust では 4 文字でも
+    // DB の CHECK 制約（1〜50文字）では 0 文字と数えられ、INSERT / UPDATE が失敗して 500 になる。
+    // 「Rust 側の数え方」と「DB 側の数え方」が食い違う入力は、入口のここで弾いておく。
+    if input.title.contains('\0') || input.text.contains('\0') {
+        errors.push("タイトルと本文に使えない文字が含まれています".to_string());
+    }
+
     // 画像は任意。`match` で「無い」「空」「大きすぎる」「形式を判定する」に分ける。
     // `&input.image_bytes` と参照で受けるので、中の Vec<u8> は所有権を移さずに覗くだけ。
     let image = match &input.image_bytes {
@@ -260,6 +268,14 @@ mod tests {
             errors_of(&input(" \u{3000}\n", "", None)),
             ["タイトルは必須です"]
         );
+    }
+
+    #[test]
+    fn nul_character_in_title_or_text_returns_error() {
+        let message = ["タイトルと本文に使えない文字が含まれています"];
+        assert_eq!(errors_of(&input("\0abc", "", None)), message);
+        assert_eq!(errors_of(&input("ab\0c", "", None)), message);
+        assert_eq!(errors_of(&input("タイトル", "本文\0", None)), message);
     }
 
     #[test]

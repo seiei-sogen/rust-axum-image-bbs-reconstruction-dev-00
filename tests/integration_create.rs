@@ -118,6 +118,39 @@ async fn text_of_501_chars_is_rejected_and_title_is_kept() {
 }
 
 #[tokio::test]
+async fn nul_in_the_title_is_a_validation_error_and_creates_nothing() {
+    let app = common::setup().await;
+
+    let res = common::post_multipart(&app.router, "/posts", &[Part::Text("title", "\0abc")]).await;
+
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+    assert!(res
+        .body
+        .contains("タイトルと本文に使えない文字が含まれています"));
+    assert_eq!(common::post_count(&app.db).await, 0);
+}
+
+#[tokio::test]
+async fn rerendered_text_is_html_escaped() {
+    let app = common::setup().await;
+
+    // タイトルを空にして 400 にし、本文には textarea を閉じてスクリプトを差し込む文字列を入れる
+    let res = common::post_multipart(
+        &app.router,
+        "/posts",
+        &[
+            Part::Text("title", ""),
+            Part::Text("text", "</textarea><script>alert(2)</script>"),
+        ],
+    )
+    .await;
+
+    assert_eq!(res.status, StatusCode::BAD_REQUEST);
+    assert!(!res.body.contains("<script>alert(2)</script>"));
+    assert!(res.body.contains("&lt;script&gt;alert(2)"));
+}
+
+#[tokio::test]
 async fn rerendered_input_is_html_escaped() {
     let app = common::setup().await;
     let title = r#""><script>alert(1)</script>"#;
@@ -296,7 +329,8 @@ async fn png_is_saved_as_id_png_and_served_from_uploads() {
     // 一覧に画像が出て、その URL から保存した中身がそのまま返ってくる（REQ-013）
     let (_, html) = common::get(&app.router, "/").await;
     let src = format!("/uploads/{filename}");
-    assert!(html.contains(&format!(r#"src="{src}""#)));
+    // URL の後ろには、差し替え時にブラウザのキャッシュを避けるための `?v=更新時刻` が付く
+    assert!(html.contains(&format!(r#"src="{src}?v="#)));
     let served = common::send(&app.router, Request::get(&src).body(Body::empty()).unwrap()).await;
     assert_eq!(served.status, StatusCode::OK);
     assert_eq!(served.content_type.as_deref(), Some("image/png"));

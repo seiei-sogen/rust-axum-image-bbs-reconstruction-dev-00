@@ -39,11 +39,14 @@
     <article class="col-md-6 mb-3">
       <div class="card">
         {% match post.image %}{% when Some with (path) %}
-        <img src="/uploads/{{ path }}" class="card-img-top" alt="">
+        {# `?v=更新時刻` を付けるのは、同じファイル名（例: 5.png → 5.png）で画像を差し替えたとき、
+           ブラウザが手元に保存した古い画像を出し続けないようにするため。URL が変われば取り直される #}
+        <img src="/uploads/{{ path }}?v={{ post.update_date.and_utc().timestamp() }}" class="card-img-top" alt="">
         {% when None %}{% endmatch %}
         <div class="card-body">
           <h3 class="h5 card-title">{{ post.title }}</h3>
-          <p class="card-text">{{ post.text }}</p>
+          {# HTML は改行を空白1つとして表示する。`white-space: pre-wrap` で、本文に入力された改行をそのまま見せる #}
+          <p class="card-text" style="white-space: pre-wrap;">{{ post.text }}</p>
           <small class="text-muted">{{ post.regist_date }}</small>
           <div class="mt-2">
             <a href="/posts/{{ post.id }}/edit" class="btn btn-primary btn-sm">編集</a>

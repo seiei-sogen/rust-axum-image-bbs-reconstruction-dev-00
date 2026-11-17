@@ -62,7 +62,7 @@ async fn list_shows_image_only_for_posts_with_image() {
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(count(&html, "<img"), 1);
-    assert!(html.contains(r#"src="/uploads/1.jpg""#));
+    assert!(html.contains(r#"src="/uploads/1.jpg?v="#));
 }
 
 #[tokio::test]
@@ -88,7 +88,7 @@ async fn single_post_with_image_shows_image_title_text_and_date_in_one_card() {
     assert_eq!(count(&html, "<article"), 1);
     // `<article` から `</article>` までの1枚のカードに、4つとも入っている
     let card = &html[html.find("<article").unwrap()..html.find("</article>").unwrap()];
-    let src = format!(r#"src="/uploads/{image}""#);
+    let src = format!(r#"src="/uploads/{image}?v="#);
     for expected in [
         src.as_str(),
         "画像つきの投稿",
@@ -217,4 +217,16 @@ async fn list_returns_500_when_db_is_unavailable() {
     let (status, _html) = common::get(&app.router, "/").await;
 
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
+async fn line_breaks_in_the_text_are_kept_on_the_page() {
+    let app = common::setup().await;
+    common::insert_post(&app.db, "改行のある投稿", "1行目\n2行目\n3行目", None).await;
+
+    let (_, html) = common::get(&app.router, "/").await;
+
+    // 本文の改行は HTML に残り、その要素は改行を表示する指定（pre-wrap）になっている
+    assert!(html.contains(r#"style="white-space: pre-wrap;">1行目"#));
+    assert!(html.contains("1行目\n2行目\n3行目</p>"));
 }
