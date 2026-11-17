@@ -93,6 +93,32 @@ impl ValidatedPostForm {
     pub fn delete_image(&self) -> bool {
         self.delete_image
     }
+
+    /// 編集で、投稿の画像をどうするかを決める。新しい画像があれば差し替え、なければそのまま。
+    ///
+    /// 学習メモ: 戻り値の `ImageChange<'_>` の `'_` は「`&self` から借りている」という印。
+    /// `Replace` が持つ画像の参照は、このフォームが生きている間だけ使える。
+    pub fn image_change(&self) -> ImageChange<'_> {
+        match &self.image {
+            Some(image) => ImageChange::Replace(image),
+            None => ImageChange::Keep,
+        }
+    }
+}
+
+/// 編集で投稿の画像をどう変えるか。`ValidatedPostForm::image_change` だけが決める。
+///
+/// 学習メモ:
+/// - 「新しい画像があるか」「削除チェックが ON か」を使う側があちこちで組み合わせて判定すると、
+///   場所ごとに解釈が食い違いやすい。組み合わせの解釈は1か所で済ませ、結果を enum で渡す。
+///   使う側は `match` で全バリアントを扱わないとコンパイルできないので、扱い忘れも起きない。
+/// - `<'a>` はライフタイム引数。`Replace(&'a ValidatedImage)` は検証済みフォームの画像を借りているだけで、
+///   数 MB のバイト列を複製しない。借用元のフォームより長く使おうとするとコンパイルエラーになる。
+pub enum ImageChange<'a> {
+    /// 画像はそのまま。`image` 列もファイルも触らない。
+    Keep,
+    /// この画像に差し替える。古い画像ファイルは消す（拡張子が変わる場合も）。
+    Replace(&'a ValidatedImage),
 }
 
 /// 投稿フォームの入力を検証する。

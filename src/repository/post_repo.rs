@@ -85,6 +85,21 @@ pub async fn insert(db: &SqlitePool, title: &str, text: &str) -> AppResult<i64> 
     Ok(result.last_insert_rowid())
 }
 
+/// 投稿のタイトルと本文を更新する。`image` 列には触らない。`update_date` は今の時刻にする。
+///
+/// 学習メモ:
+/// - `update_date = datetime('now')` のように、時刻は Rust 側で作らず SQLite に作らせる。
+///   INSERT 時の `DEFAULT (datetime('now'))` と同じ形式・同じ時計になるので、一覧の表示がそろう。
+pub async fn update(db: &SqlitePool, id: i64, title: &str, text: &str) -> AppResult<()> {
+    sqlx::query("UPDATE post SET title = ?, text = ?, update_date = datetime('now') WHERE id = ?")
+        .bind(title)
+        .bind(text)
+        .bind(id)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
 /// 投稿の画像ファイル名（例: `"5.png"`）を設定する。`None` なら NULL（画像なし）にする。
 ///
 /// 学習メモ:
@@ -258,6 +273,30 @@ mod tests {
 
         update_image_path(&pool, id, None).await.unwrap();
         assert_eq!(find(&pool, id).await.unwrap().unwrap().image, None);
+    }
+
+    #[tokio::test]
+    async fn test_update_changes_title_and_text_but_not_image() {
+        let pool = setup_memory_pool().await;
+        let id = insert(&pool, "古いタイトル", "古い本文").await.unwrap();
+        let other = insert(&pool, "別の投稿", "そのまま").await.unwrap();
+        update_image_path(&pool, id, Some("1.png")).await.unwrap();
+        // datetime('now') は秒単位なので、更新されたと分かるよう日時を過去にずらしておく
+        sqlx::query("UPDATE post SET update_date = '2000-01-01 00:00:00'")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        update(&pool, id, "新しいタイトル", "新しい本文")
+            .await
+            .unwrap();
+
+        let post = find(&pool, id).await.unwrap().unwrap();
+        assert_eq!(post.title, "新しいタイトル");
+        assert_eq!(post.text, "新しい本文");
+        assert_eq!(post.image.as_deref(), Some("1.png"));
+        assert_ne!(post.update_date.to_string(), "2000-01-01 00:00:00");
+        assert_eq!(find(&pool, other).await.unwrap().unwrap().title, "別の投稿");
     }
 
     #[tokio::test]

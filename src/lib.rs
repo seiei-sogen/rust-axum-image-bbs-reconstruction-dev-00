@@ -80,7 +80,11 @@ pub fn build_app(state: AppState) -> Router {
         .route("/", get(posts::list))
         .route("/posts", post(posts::create))
         // `:id` はパスパラメータ。ハンドラ側で `Path<i64>` として受け取る
-        .route("/posts/:id/edit", get(posts::edit_form))
+        // 同じ URL でも、GET はフォーム表示、POST は更新処理と、メソッドごとにハンドラを分けられる
+        .route(
+            "/posts/:id/edit",
+            get(posts::edit_form).post(posts::edit_submit),
+        )
         // `route` は「この URL にこのハンドラ関数」、`nest_service` は「この URL 以下を丸ごとこのサービスに」。
         // ServeDir には `/uploads` を取り除いた残り（`/5.png`）が渡る。
         .nest_service("/uploads", uploads)

@@ -16,10 +16,12 @@ use crate::repository::post_repo;
 use crate::state::AppState;
 use crate::storage::image_store;
 use crate::templates::{EditView, IndexView};
-use crate::validators::post_form::{validate, PostFormInput, ValidatedImage};
+use crate::validators::post_form::{validate, ImageChange, PostFormInput, ValidatedImage};
 
 /// 投稿作成に成功したあとのリダイレクト先。一覧の上に「投稿しました」を出す（REQ-202）。
 const CREATED_REDIRECT: &str = "/?notice=created";
+/// 編集に成功したあとのリダイレクト先。一覧の上に「更新しました」を出す。
+const UPDATED_REDIRECT: &str = "/?notice=updated";
 
 /// `?notice=created` を受け取るクエリ型。PRG のリダイレクト先で、直前の操作の結果を知らせる。
 #[derive(Debug, Deserialize)]
@@ -39,12 +41,14 @@ pub struct NoticeQuery {
 #[serde(rename_all = "snake_case")]
 pub enum Notice {
     Created,
+    Updated,
 }
 
 impl Notice {
     fn message(self) -> &'static str {
         match self {
             Notice::Created => "投稿しました",
+            Notice::Updated => "更新しました",
         }
     }
 }
@@ -179,6 +183,64 @@ pub async fn edit_form(State(state): State<AppState>, Path(id): Path<i64>) -> Ap
         form,
         errors: Vec::new(),
     })
+}
+
+/// `POST /posts/{id}/edit` 投稿を更新する（multipart/form-data、REQ-009）。
+///
+/// 流れ:
+/// 1. 投稿があるか確かめる（無ければ 404）
+/// 2. multipart を読んで検証する。失敗なら入力値を残したまま編集フォームを 400 で再表示（REQ-201）
+/// 3. 画像の扱い（`ImageChange`）ごとに、ファイルと DB を更新する
+/// 4. 303 See Other で一覧へリダイレクト（PRG パターン）
+///
+/// 画像を差し替えるときの順序（途中で失敗しても、DB が存在しないファイルを指さないようにする）:
+/// 1. 新しい画像を保存する。失敗したらここで 500。DB にも古い画像ファイルにもまだ触っていない
+/// 2. 保存できてから、タイトル・本文と `image` 列を更新する
+/// 3. 最後に、拡張子が変わって不要になった古いファイル（`5.jpg` → `5.png` の `5.jpg`）を消す
+pub async fn edit_submit(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    multipart: Result<Multipart, MultipartRejection>,
+) -> AppResult<Response> {
+    // ボディを読む前に存在を確かめる。無い投稿への送信は、中身に関係なく 404
+    let post = post_repo::find(&state.db, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let mut multipart = multipart?;
+    let input = parse_multipart(&mut multipart).await?;
+
+    let form = match validate(&input, &state.config) {
+        Ok(form) => form,
+        Err(AppError::Validation(errors)) => {
+            // `post`（DB の値）は送信先 URL と画像プレビューに、`input`（入力値）はフォームの中身に使う
+            let view = EditView {
+                post,
+                form: input,
+                errors,
+            };
+            return Ok((StatusCode::BAD_REQUEST, view).into_response());
+        }
+        Err(err) => return Err(err),
+    };
+
+    // `match` は ImageChange の全バリアントを書かないとコンパイルできない
+    match form.image_change() {
+        ImageChange::Keep => {
+            post_repo::update(&state.db, id, form.title(), form.text()).await?;
+        }
+        ImageChange::Replace(image) => {
+            let filename = image_store::save_image(&state.upload_dir, id, image).await?;
+            post_repo::update(&state.db, id, form.title(), form.text()).await?;
+            post_repo::update_image_path(&state.db, id, Some(&filename)).await?;
+            // DB はもう新しいファイルを指している。古いファイルを消せなくても誰も参照しないので、警告だけにする
+            let keep = Some(image.extension());
+            if let Err(err) = image_store::delete_image_except(&state.upload_dir, id, keep).await {
+                tracing::warn!(post_id = id, error = ?err, "failed to remove the replaced image");
+            }
+        }
+    }
+
+    Ok(Redirect::to(UPDATED_REDIRECT).into_response())
 }
 
 /// 一覧ページ（投稿フォームつき）の表示内容を組み立てる。フォームは空、メッセージはなし。
