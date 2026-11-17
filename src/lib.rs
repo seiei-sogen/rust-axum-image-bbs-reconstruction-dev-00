@@ -61,8 +61,9 @@ pub fn build_app(state: AppState) -> Router {
     let max_body_bytes = state.config.max_image_bytes + MULTIPART_OVERHEAD_BYTES;
     // `/uploads/5.png` → `{upload_dir}/5.png` を返す静的ファイル配信（REQ-013）。
     // ServeDir は `..` を含むパスを拒否するので、upload_dir の外のファイルは読めない。
-    // `clone()` するのは、`state` 本体はこの後 `with_state` へムーブするため。
-    let uploads = ServeDir::new(state.upload_dir.clone());
+    // `ServeDir::new` は `AsRef<Path>`（パスとして借用できる型）を受け取り、内部で自分用の `PathBuf` を作る。
+    // そのため `&state.upload_dir` と借用で渡せば足り、`state` 本体はこの後 `with_state` へムーブできる。
+    let uploads = ServeDir::new(&state.upload_dir);
 
     // ---------- ルーター組み立て ----------
     //

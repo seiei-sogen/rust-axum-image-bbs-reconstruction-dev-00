@@ -322,8 +322,14 @@ async fn saved_extension_comes_from_content_not_file_name() {
     assert_eq!(res.status, StatusCode::SEE_OTHER);
     let id = newest_id(&app.db).await;
     assert_eq!(common::upload_files(&app), [format!("{id}.jpg")]);
-    let outside = app.upload_dir.path().parent().unwrap().join("evil.png");
-    assert!(!outside.exists());
+    // `../../evil.png` は upload_dir の2つ上を指す。1つ上と2つ上のどちらにも書かれていないことを確かめる
+    for dir in app.upload_dir.path().ancestors().skip(1).take(2) {
+        assert!(
+            !dir.join("evil.png").exists(),
+            "{} に書かれた",
+            dir.display()
+        );
+    }
 }
 
 #[tokio::test]
