@@ -103,6 +103,11 @@ pub async fn list(
 /// - 引数を `Result<Multipart, MultipartRejection>` で受けると、Content-Type が multipart でないときも
 ///   axum の既定の応答ではなく、自前の `AppError` を通して返せる（`?` で `From` 変換される）。
 /// - `Multipart` はリクエストのボディを読み進める抽出器なので、引数の **最後** に置く決まりがある。
+/// - `#[tracing::instrument]` は、この関数の実行中ずっと有効な span（ログの文脈）を作る。
+///   中で出したログには `create{post_id=5}` のように span の名前とフィールドが付く。
+///   `skip_all` で引数をどれも span に記録しない（フォームの中身や画像をログに出さないため）。
+///   `post_id` は INSERT するまで分からないので、`field::Empty`（空欄）で用意して後から `record` で埋める。
+#[tracing::instrument(skip_all, fields(post_id = tracing::field::Empty))]
 pub async fn create(
     State(state): State<AppState>,
     multipart: Result<Multipart, MultipartRejection>,
@@ -127,16 +132,18 @@ pub async fn create(
 
     // 画像のファイル名には投稿 id を使うので、先に画像なしで INSERT して id を決める
     let id = post_repo::insert(&state.db, form.title(), form.text()).await?;
+    tracing::Span::current().record("post_id", id);
 
     // `if let Some(x) = ...` は Option が Some のときだけ中に入る書き方
     if let Some(image) = form.image() {
         if let Err(err) = attach_image(&state, id, image).await {
             // 画像を保存できなかった投稿は残さない（EDGE-005）。元のエラー（多くは I/O の 500）を返す
-            rollback_create(&state, id).await;
+            rollback_create(&state, id, &err).await;
             return Err(err);
         }
     }
 
+    tracing::info!("post created");
     Ok(Redirect::to(CREATED_REDIRECT).into_response())
 }
 
@@ -151,9 +158,11 @@ async fn attach_image(state: &AppState, id: i64, image: &ValidatedImage) -> AppR
 /// SQLite の1文はそれぞれ原子的に実行されるが、「INSERT → ファイル保存 → UPDATE」の3つをまとめて
 /// 取り消す仕組みはないので、失敗したら自分で DELETE して元に戻す。
 /// ここでの失敗はログにだけ残す。呼び出し元は最初のエラーのほうを利用者に返す。
-async fn rollback_create(state: &AppState, id: i64) {
+/// `reason` は取り消すきっかけになったエラー。運用者が原因を追えるよう、ログに載せる。
+async fn rollback_create(state: &AppState, id: i64, reason: &AppError) {
     tracing::warn!(
         post_id = id,
+        reason = %reason,
         "image could not be saved, rolling back the post"
     );
     // `if let Err(err) = ...` は「失敗したときだけ」処理する書き方。成功（Ok）なら何もしない
@@ -205,6 +214,9 @@ pub async fn edit_form(State(state): State<AppState>, Path(id): Path<i64>) -> Ap
 ///
 /// 画像だけを削除するときも「DB が先、ファイルが後」。先に `image` 列を NULL にしておけば、
 /// ファイルの削除に失敗しても、一覧が消えたファイルを表示しようとすることはない。
+///
+/// span には URL の id を `post_id` として載せる（`create` と同じく、引数そのものは記録しない）。
+#[tracing::instrument(skip_all, fields(post_id = id))]
 pub async fn edit_submit(
     State(state): State<AppState>,
     Path(id): Path<i64>,
@@ -249,6 +261,7 @@ pub async fn edit_submit(
         }
     }
 
+    tracing::info!("post updated");
     Ok(Redirect::to(UPDATED_REDIRECT).into_response())
 }
 
@@ -262,6 +275,7 @@ pub async fn edit_submit(
 ///   405 Method Not Allowed を返す（NFR-105）。リンクを踏んだりクローラが巡回したりしただけで消えることはない。
 /// - 画像の有無にかかわらずファイル削除を呼ぶ。`delete_image_except` は無いファイルを無視するので、
 ///   画像なしの投稿でも害はなく、過去の失敗で残ったファイルがあれば一緒に片付く。
+#[tracing::instrument(skip_all, fields(post_id = id))]
 pub async fn delete(State(state): State<AppState>, Path(id): Path<i64>) -> AppResult<Response> {
     // 値は使わず、存在の確認だけ。無ければ 404
     post_repo::find(&state.db, id)
@@ -269,6 +283,7 @@ pub async fn delete(State(state): State<AppState>, Path(id): Path<i64>) -> AppRe
         .ok_or(AppError::NotFound)?;
     remove_image_files(&state, id, None).await;
     post_repo::delete(&state.db, id).await?;
+    tracing::info!("post deleted");
     Ok(Redirect::to(DELETED_REDIRECT).into_response())
 }
 

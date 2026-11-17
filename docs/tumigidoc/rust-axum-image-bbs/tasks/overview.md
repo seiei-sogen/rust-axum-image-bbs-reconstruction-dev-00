@@ -179,7 +179,7 @@ articles/
 - [x] [TASK-0017](TASK-0017.md): 統合テスト基盤整備 — TDD, 4h ✅ 完了 (2026-11-17)
 - [x] [TASK-0018](TASK-0018.md): 主要機能の統合テスト追加 — TDD, 4h ✅ 完了 (2026-11-17)
 - [x] [TASK-0019](TASK-0019.md): Dockerfile + docker-compose.yml — DIRECT, 4h ✅ 完了 (2026-11-17)
-- [ ] [TASK-0020](TASK-0020.md): tracing 構造化ログ仕上げ + README 整備 — DIRECT, 4h
+- [x] [TASK-0020](TASK-0020.md): tracing 構造化ログ仕上げ + README 整備 — DIRECT, 4h ✅ 完了 (2026-11-17)
 
 📝 **Phase 3 完了時に書くまとめ記事**: 「まとめ⑤ 統合テスト・Docker・READMEで配布できるようにする」
 

@@ -32,7 +32,8 @@ use axum::{
     Router,
 };
 use tower_http::services::ServeDir;
-use tower_http::trace::TraceLayer;
+use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
+use tracing::Level;
 
 use crate::errors::AppError;
 use crate::handlers::posts;
@@ -72,9 +73,13 @@ pub fn build_app(state: AppState) -> Router {
     // 学習メモ:
     // - axum の `.layer()` は「ミドルウェアを外側から被せる」イメージ。
     //   複数呼べば複数のレイヤーが積み重なる。
-    // - TraceLayer はリクエスト開始時（on_request）と終了時（on_response、ステータスと所要時間つき）に
-    //   DEBUG レベルでログを出す。既定の RUST_LOG（main.rs 参照）で tower_http=debug にしているのは、
-    //   このログを表示するため。
+    // - TraceLayer はリクエストごとに `request{method=... uri=...}` という span を作り、
+    //   開始時（on_request）と終了時（on_response、ステータスと所要時間つき）にログを出す。
+    //   既定ではどれも DEBUG なので、span と終了時のログを INFO に上げている。
+    //   これで既定の RUST_LOG（"info"、main.rs 参照）のままでも、リクエスト1件につき
+    //   「INFO request{method=POST uri=/posts ...}: finished processing request latency=.. status=303」の1行が出る。
+    //   開始時のログは DEBUG のまま（RUST_LOG=tower_http=debug で見える）。
+    // - ヘッダやボディはログに出さない（DefaultMakeSpan の既定）。タイトルや本文がログに残らない。
     // - AppState は Router::with_state で各ハンドラへ共有する。
     Router::new()
         .route("/", get(posts::list))
@@ -95,6 +100,10 @@ pub fn build_app(state: AppState) -> Router {
         .fallback(|| async { AppError::NotFound })
         // multipart の読み取りはこの上限で打ち切られる（超えたら 413）
         .layer(DefaultBodyLimit::max(max_body_bytes))
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+                .on_response(DefaultOnResponse::new().level(Level::INFO)),
+        )
         .with_state(state)
 }

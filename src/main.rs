@@ -18,6 +18,11 @@
 //!   `tracing::info!` などを使うと RUST_LOG 環境変数一つでレベル切替ができる。
 //! - TraceLayer の説明は、ルーターと一緒に `src/lib.rs` へ移した。
 //!
+//! TASK-0020 追加メモ（ログの形式）:
+//! - 既定のフィルタを "info" にし、LOG_FORMAT=json で JSON 形式に切り替えられるようにした。
+//! - 投稿の作成・更新・削除のハンドラには `#[tracing::instrument]` で span を付け、`post_id` を載せている
+//!   （`src/handlers/posts.rs`）。
+//!
 //! TASK-0003 追加メモ（SQLite + sqlx 接続とマイグレーション）:
 //! - `SqlitePoolOptions` は接続プール（複数の DB 接続をまとめて管理する仕組み）を構築する。
 //!   プールを使うと、リクエストごとに接続を確立・切断するコストを省いて効率よく DB を使える。
@@ -33,6 +38,7 @@
 use rust_axum_image_bbs::{build_app, config::AppConfig, state::AppState};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
+use std::io::IsTerminal; // `stdout().is_terminal()`（出力先が端末かどうか）を使えるようにするトレイト
 use std::path::PathBuf;
 use std::str::FromStr;
 use tracing_subscriber::EnvFilter;
@@ -59,21 +65,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // tracing-subscriber の fmt（フォーマット出力）サブスクライバを初期化する。
     // with_env_filter により:
     //   - RUST_LOG 環境変数が設定されていればその値を使う（例: RUST_LOG=debug）
-    //   - 未設定の場合は "info,tower_http=debug" をデフォルトとして使う
-    //     → アプリ全体は INFO 以上、tower_http（TraceLayer のログ）は DEBUG 以上を表示
+    //   - 未設定の場合は "info" をデフォルトとして使う
+    //     → INFO 以上を表示。TraceLayer のリクエストごとのログも INFO で出す（src/lib.rs）
+    // 出力の形式:
+    //   - 既定は人間が読む1行テキスト。端末に出すときだけ色を付ける
+    //     （`docker compose logs` などファイルや別プロセスに流すときは、色の制御文字が混ざらない）
+    //   - LOG_FORMAT=json のときは1行1つの JSON（ログ集約ツールに読ませるとき用）
     //
     // 学習メモ:
     // - `EnvFilter::try_from_default_env()` は失敗する可能性があるので Result を返す。
     //   `.unwrap_or_else(|_| ...)` で失敗時のフォールバックを指定している。
     //   これは Rust 的な「エラーハンドリングのパターン」として頻出。
+    // - `std::env::var(...)` は `Result<String, VarError>`。`.as_deref()` で中身を `&str` として借りると、
+    //   `Ok("json")` という値とそのまま `==` で比べられる（未設定なら Err なので false）。
+    // - `if` の両側で `.init()` まで書いているのは、`.json()` を付けると builder の型が変わり、
+    //   1つの変数に入れて後から共通の `.init()` を呼ぶ、という書き方ができないから。
     // - `.init()` を呼ぶまでトレースイベントは何も出力されない。
     //   main の最初に書くのは「ここより前のログが消えないようにするため」。
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info,tower_http=debug")),
-        )
-        .init();
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    if std::env::var("LOG_FORMAT").as_deref() == Ok("json") {
+        tracing_subscriber::fmt()
+            .json()
+            .with_env_filter(filter)
+            .init();
+    } else {
+        tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_ansi(std::io::stdout().is_terminal())
+            .init();
+    }
 
     // ---------- DB 接続プールの構築 ----------
     //

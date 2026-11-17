@@ -45,8 +45,7 @@ fmt:
 fmt-check:
     cargo fmt -- --check
 
-# Lint。警告はエラー扱いにして見逃さないようにする
-# --all-targets で、本体だけでなく tests/ の統合テストやユニットテストも検査する
+# Lint。tests/ も含めて検査し（--all-targets）、警告はエラー扱いにして見逃さないようにする
 lint:
     cargo clippy --all-targets -- -D warnings
 
