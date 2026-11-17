@@ -116,8 +116,11 @@ mod tests {
     ///
     /// 学習メモ:
     /// - `sqlite::memory:` はファイルを作らずメモリ上だけに DB を置く。テストごとにまっさらな DB になる。
-    /// - in-memory DB は「接続」に紐づくため、接続が全部閉じると中身も消える。
-    ///   `max_connections(1)` で接続を1本に固定し、マイグレーションとクエリが必ず同じ DB を見るようにする。
+    /// - SQLite 本体の in-memory DB は「接続」ごとに別々の DB になり、接続が全部閉じると中身も消える。
+    ///   sqlx 0.8 は `sqlite::memory:` を、`connect` の呼び出しごとに名前を変えた
+    ///   「共有キャッシュ付きの in-memory DB」に読み替えるので、同じプールの接続どうしは同じ DB を見る。
+    /// - それでも `max_connections(1)` で接続を1本に固定している。こうしておけば sqlx のこの読み替えに
+    ///   頼らなくても、マイグレーションとクエリが必ず同じ DB を見る（必須ではなく安全策）。
     async fn setup_memory_pool() -> SqlitePool {
         let pool = SqlitePoolOptions::new()
             .max_connections(1)

@@ -72,8 +72,9 @@ pub fn build_app(state: AppState) -> Router {
     // 学習メモ:
     // - axum の `.layer()` は「ミドルウェアを外側から被せる」イメージ。
     //   複数呼べば複数のレイヤーが積み重なる。
-    // - TraceLayer はリクエスト開始時に INFO ログ、終了時に INFO + ステータスを出す。
-    //   内部の詳細は DEBUG レベルで出るため、tower_http=debug にしておくと見やすい。
+    // - TraceLayer はリクエスト開始時（on_request）と終了時（on_response、ステータスと所要時間つき）に
+    //   DEBUG レベルでログを出す。既定の RUST_LOG（main.rs 参照）で tower_http=debug にしているのは、
+    //   このログを表示するため。
     // - AppState は Router::with_state で各ハンドラへ共有する。
     Router::new()
         .route("/", get(posts::list))

@@ -34,6 +34,8 @@ pub struct TestApp {
 /// 学習メモ:
 /// - in-memory SQLite は接続が全部閉じると中身が消える。`max_connections(1)` で接続を1本に固定し、
 ///   マイグレーション・テストデータ投入・ハンドラが必ず同じ DB を見るようにする。
+///   （sqlx 0.8 は `sqlite::memory:` を共有キャッシュ付きの in-memory DB に読み替えるので、
+///   同じプールなら複数接続でも同じ DB を見る。1本に固定するのは、それに頼らないための安全策）
 /// - `db.clone()` はプールの複製だが、中身は参照カウント付きの共有なので同じ接続を指す。
 pub async fn setup() -> TestApp {
     let db = SqlitePoolOptions::new()
