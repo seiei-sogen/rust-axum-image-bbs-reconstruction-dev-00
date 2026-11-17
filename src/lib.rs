@@ -23,6 +23,7 @@ pub mod models;
 pub mod repository;
 pub mod state;
 pub mod templates;
+pub mod validators;
 
 use axum::{extract::DefaultBodyLimit, routing::get, Router};
 use tower_http::trace::TraceLayer;

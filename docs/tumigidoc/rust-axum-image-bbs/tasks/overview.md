@@ -154,7 +154,7 @@ articles/
 > ゴール: 画像付き投稿ができ、バリデーション・ロールバック・共通エラーが整う。
 > Rust の `Result` / `?` / `thiserror` の活用が一通り体験できる山場。
 
-- [ ] [TASK-0009](TASK-0009.md): バリデータと ImageExt 型 — TDD, 4h
+- [x] [TASK-0009](TASK-0009.md): バリデータと ImageExt 型 — TDD, 4h ✅ 完了 (2026-11-17)
 - [ ] [TASK-0010](TASK-0010.md): POST /posts 投稿作成（画像なし版） — TDD, 4h
 - [ ] [TASK-0011](TASK-0011.md): 画像アップロード + ImageStore + ロールバック — TDD, 4h
 - [ ] [TASK-0012](TASK-0012.md): AppError + IntoResponse 実装 — TDD, 4h

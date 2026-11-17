@@ -1,7 +1,7 @@
 //! アプリ共通のエラー型 `AppError` と、その `Result` 別名 `AppResult` を定義するモジュール。
 //!
-//! 現時点では DB 操作の失敗（`sqlx::Error`）だけを扱う。
-//! 画像 I/O・バリデーション・404 などのバリアントは、必要になったタスクで順に追加していく。
+//! 現時点では DB 操作の失敗（`sqlx::Error`）と、入力値のバリデーション失敗を扱う。
+//! 画像 I/O・404 などのバリアントは、必要になったタスクで順に追加していく。
 //!
 //! 学習メモ:
 //! - Rust のエラー処理は `Result<T, E>` 型が基本。成功なら `Ok(T)`、失敗なら `Err(E)` を返す。
@@ -20,6 +20,11 @@ use axum::response::{IntoResponse, Response};
 /// `#[derive(Debug)]` はテストの `unwrap()` 失敗時やログ出力で中身を表示するために必要。
 #[derive(Debug)]
 pub enum AppError {
+    /// 入力値のバリデーション失敗。利用者に見せるメッセージを複数まとめて持つ。
+    ///
+    /// 投稿フォームのハンドラはこれを受け取ったら、入力値を残したままフォームを 400 で再表示する。
+    /// ハンドラが拾わずにそのまま返した場合は、下の `into_response` で 400 になる。
+    Validation(Vec<String>),
     /// DB 操作の失敗。sqlx が返したエラーをそのまま包んで持ち運ぶ。
     Sqlx(sqlx::Error),
 }
@@ -43,6 +48,10 @@ impl From<sqlx::Error> for AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         match self {
+            // メッセージは利用者向けの固定文なので、そのまま返してよい
+            AppError::Validation(messages) => {
+                (StatusCode::BAD_REQUEST, messages.join("\n")).into_response()
+            }
             AppError::Sqlx(err) => {
                 // `%err` は Display 形式でログのフィールドに埋め込む指定（`?err` なら Debug 形式）
                 tracing::error!(error = %err, "database error");

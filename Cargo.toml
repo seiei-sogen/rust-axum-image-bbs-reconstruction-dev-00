@@ -48,6 +48,10 @@ askama_axum = "0.4"
 #   features = ["derive"] で `#[derive(Deserialize)]` が使えるようになり、
 #   axum の `Query<T>` が `?page=2` を構造体 T に変換するときに使われる。
 serde = { version = "1", features = ["derive"] }
+# infer：ファイル先頭のバイト列（マジックナンバー）から形式を判定するクレート。
+#   PNG なら必ず `89 50 4E 47`、JPEG なら `FF D8 FF` で始まる、という決まりを使う。
+#   クライアントが申告するファイル名や Content-Type は簡単に偽装できるので、画像形式はこれで判定する（NFR-102）。
+infer = "0.16"
 
 # dev-dependencies はテスト（cargo test）のときだけ使うクレート。本番バイナリには含まれない。
 [dev-dependencies]
