@@ -5,6 +5,11 @@
 #   scripts/e2e.sh          # 投稿作成・一覧・ページング・編集・削除をすべて確認する
 #   scripts/e2e.sh create   # 投稿作成・一覧・ページングまで（編集・削除を実装する前の段階用）
 #
+#   # すでに動いているサーバ（例: Docker のコンテナ）を確かめる。ビルドと起動はしない。
+#   # サーバの DB とアップロード先は空にしておくこと（件数やファイル数を数えるため）。
+#   # E2E_UPLOAD_DIR はサーバのアップロード先をこのマシンから見たパス。省くとファイル数の確認だけ飛ばす
+#   E2E_BASE_URL=http://127.0.0.1:3000 E2E_UPLOAD_DIR=uploads scripts/e2e.sh
+#
 # やっていること:
 #   1. cargo build でバイナリを作る
 #   2. 一時ディレクトリに DB とアップロード先を作り、空きポートでサーバを起動する
@@ -18,9 +23,10 @@ set -euo pipefail
 
 UPTO="${1:-all}"
 PORT="${E2E_PORT:-3999}"
-BASE="http://127.0.0.1:${PORT}"
+BASE="${E2E_BASE_URL:-http://127.0.0.1:${PORT}}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(mktemp -d)"
+UPLOADS="${E2E_UPLOAD_DIR:-}"
 PASS=0
 FAIL=0
 
@@ -80,24 +86,29 @@ echo "this is not an image" > "$WORK/fake.png"
 head -c $((6 * 1024 * 1024)) /dev/zero > "$WORK/big.png"
 
 # ---------- サーバ起動 ----------
-echo "== build"
-(cd "$ROOT" && cargo build --quiet)
+if [[ -n "${E2E_BASE_URL:-}" ]]; then
+    echo "== use the running server at $BASE"
+else
+    echo "== build"
+    (cd "$ROOT" && cargo build --quiet)
 
-echo "== start server on $BASE"
-(
-    cd "$ROOT"
-    PORT="$PORT" DATABASE_URL="sqlite://$WORK/app.db" UPLOAD_DIR="$WORK/uploads" \
-        RUST_LOG="${RUST_LOG:-warn}" exec ./target/debug/rust-axum-image-bbs
-) > "$WORK/server.log" 2>&1 &
-SERVER_PID=$!
+    echo "== start server on $BASE"
+    UPLOADS="$WORK/uploads"
+    (
+        cd "$ROOT"
+        PORT="$PORT" DATABASE_URL="sqlite://$WORK/app.db" UPLOAD_DIR="$UPLOADS" \
+            RUST_LOG="${RUST_LOG:-warn}" exec ./target/debug/rust-axum-image-bbs
+    ) > "$WORK/server.log" 2>&1 &
+    SERVER_PID=$!
 
-for _ in $(seq 1 50); do
-    if curl -s -o /dev/null "$BASE/"; then break; fi
-    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-        echo "server exited early:"; cat "$WORK/server.log"; exit 1
-    fi
-    sleep 0.2
-done
+    for _ in $(seq 1 50); do
+        if curl -s -o /dev/null "$BASE/"; then break; fi
+        if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+            echo "server exited early:"; cat "$WORK/server.log"; exit 1
+        fi
+        sleep 0.2
+    done
+fi
 
 # ---------- 一覧（空） ----------
 echo "== list (empty)"
@@ -144,7 +155,11 @@ check "6MB upload is 413" 413 "$(status -F 'title=too big' -F "image=@$WORK/big.
 status "$BASE/" > /dev/null
 lacks "rejected non-image post left no row" "$WORK/body" 'fake image'
 lacks "rejected 6MB post left no row" "$WORK/body" 'too big'
-check "rejected uploads left no file" 3 "$(find "$WORK/uploads" -type f | wc -l | tr -d ' ')"
+if [[ -n "$UPLOADS" ]]; then
+    check "rejected uploads left no file" 3 "$(find "$UPLOADS" -type f | wc -l | tr -d ' ')"
+else
+    echo "  skip rejected uploads left no file (set E2E_UPLOAD_DIR to check)"
+fi
 
 # ---------- XSS ----------
 echo "== escaping"
@@ -217,7 +232,9 @@ fi
 echo
 echo "passed: $PASS, failed: $FAIL"
 if [[ "$FAIL" -ne 0 ]]; then
-    echo "--- server log (last 30 lines) ---"
-    tail -30 "$WORK/server.log"
+    if [[ -f "$WORK/server.log" ]]; then
+        echo "--- server log (last 30 lines) ---"
+        tail -30 "$WORK/server.log"
+    fi
     exit 1
 fi
