@@ -324,8 +324,11 @@ mod tests {
     ///
     /// 学習メモ:
     /// - `sqlite::memory:` はファイルを作らずメモリ上だけに DB を置く。テストごとにまっさらな DB になる。
-    /// - in-memory DB は「接続」に紐づくため、接続が全部閉じると中身も消える。
-    ///   `max_connections(1)` で接続を1本に固定し、マイグレーションとクエリが必ず同じ DB を見るようにする。
+    /// - SQLite 本体の in-memory DB は「接続」ごとに別々の DB になり、接続が全部閉じると中身も消える。
+    ///   sqlx 0.8 は `sqlite::memory:` を、`connect` の呼び出しごとに名前を変えた
+    ///   「共有キャッシュ付きの in-memory DB」に読み替えるので、同じプールの接続どうしは同じ DB を見る。
+    /// - それでも `max_connections(1)` で接続を1本に固定している。こうしておけば sqlx のこの読み替えに
+    ///   頼らなくても、マイグレーションとクエリが必ず同じ DB を見る（必須ではなく安全策）。
     async fn setup_memory_pool() -> SqlitePool {
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
@@ -367,10 +370,10 @@ mod tests {
 
 ### `max_connections(1)` の理由
 
-SQLite 本体の仕様では、`:memory:` を開くと **接続ごとに独立した DB** ができる。接続 A でマイグレーションを流しても、接続 B からは `post` テーブルが見えない。接続プールは複数の接続を使い回すので、マイグレーションとクエリが別の接続に当たると、テーブルが無いエラーになりうる。接続を1本に固定すれば、どちらも必ず同じ DB を見る。これがコメントの意図だ。
+SQLite 本体の仕様では、`:memory:` を開くと **接続ごとに独立した DB** ができる。接続 A でマイグレーションを流しても、接続 B からは `post` テーブルが見えない。接続プールは複数の接続を使い回すので、マイグレーションとクエリが別の接続に当たると、テーブルが無いエラーになりうる。ただし sqlx 0.8 はこの問題を先回りして避けている。sqlx 0.8 のソースを読むと、URL の `sqlite::memory:` は `file:sqlx-in-memory-{連番}` という **共有キャッシュ付きのインメモリ DB** に読み替えられる。連番は `connect` を呼ぶたびに変わるので、テストごとに別の DB になり、同じ接続プールの接続どうしは同じ DB を共有する。
 
 :::message
-sqlx 0.8 のソースを読むと、URL の `sqlite::memory:` は `file:sqlx-in-memory-{連番}` という **共有キャッシュ付きのインメモリ DB** に読み替えられる。同じ接続プールの接続どうしは同じ DB を共有するので、`max_connections(1)` を外して3回流してもテストは6件とも通った。今の sqlx では、`max_connections(1)` は sqlx の挙動に頼らず「全部同じ DB」を保証する保険になる。
+実際に `max_connections(1)` を外して3回流しても、テストは6件とも通った。今の sqlx では `max_connections(1)` は必須ではない。それでも接続を1本に固定しておけば、sqlx のこの読み替えに頼らずに「全部同じ DB」を保証できる。コメントにあるとおり、これは安全策だ。
 :::
 
 ### テスト本体
@@ -468,7 +471,7 @@ test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; 
 
 - **モジュールを `main.rs` で取り込むと clippy が落ちる**: 呼ばれていない `pub fn` はバイナリクレートでは未使用扱いになり、`-D warnings` で6件ともエラーになった。途中で `lib.rs` が現れるのはこのためだ
 - **`query_as!` はビルド時に DB を要求する**: `DATABASE_URL` が無いと、SQL が正しくても `cargo build` が通らない
-- **`sqlite::memory:` は SQLite 本体と sqlx で挙動が違う**: コードのコメントは SQLite 本体の「接続ごとに別の DB」を前提にしているが、sqlx 0.8 では接続プール内で DB が共有される。`max_connections(1)` を外してもテストは通った
+- **`sqlite::memory:` は SQLite 本体と sqlx で挙動が違う**: SQLite 本体では接続ごとに別の DB になるが、sqlx 0.8 では接続プール内で DB が共有される。`max_connections(1)` を外してもテストは通ったので、この行は必須ではなく安全策として残している
 - **`lib.rs` ができると doc テストが走り出す**: 引数なしの `cargo test` の最後に、今回から `Doc-tests rust_axum_image_bbs` が出る。前回「`lib.rs` が無いので doc テストは実行されない」と書いた件だ。対象はライブラリクレートだけで、`config.rs` はまだバイナリ側にある
 
 ## 次回予告

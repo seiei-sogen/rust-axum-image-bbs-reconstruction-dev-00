@@ -315,7 +315,7 @@ TASK-0015 で `Remove` を足したときの変更は、enum に1行、`match` �
 保存が最初なので、保存に失敗しても何も変わっていない。手順 3 は失敗しても応答を失敗にしない。消し損ねた古いファイルは、もう誰からも参照されないからだ。
 
 ```rust:src/handlers/posts.rs
-/// 呼ぶのは DB がもうそのファイルを参照しない（またはこれから行ごと消す）とき。
+/// 呼ぶのは、DB がもうそのファイルを参照しなくなった後（画像列を更新した後、または行を消した後）。
 /// 消せなくても残るのは誰も参照しないファイルだけなので、利用者への応答は失敗にせず警告ログを残す。
 async fn remove_image_files(state: &AppState, id: i64, keep: Option<ImageExt>) {
     if let Err(err) = image_store::delete_image_except(&state.upload_dir, id, keep).await {
@@ -432,20 +432,25 @@ async fn failed_image_save_keeps_the_post_and_its_old_file() {
 ### ハンドラ
 
 ```rust:src/handlers/posts.rs
-/// 順序は「画像ファイル → DB の行」。ファイルを消せなかった場合も警告ログだけ残して行は消す。
-/// 逆に行が残ってファイルだけ消えると、一覧に壊れた画像が出てしまう。誰も参照しないファイルが残るほうがまし。
+/// 順序は「DB の行 → 画像ファイル」。先に行を消しておけば、ファイルを消せなかったときに残るのは
+/// 誰も参照しないファイルだけになる（その場合は警告ログを残し、利用者への応答は成功にする）。
+/// 逆の順（ファイル → 行）だと、ファイルを消した後で DELETE が失敗したときに行だけが残り、
+/// 一覧に壊れた画像が出てしまう。id は AUTOINCREMENT で再利用されないので、
+/// 残ったファイルが別の投稿の画像として使われることもない。
 ///
 /// 学習メモ:
 /// - ...（省略: 405 について。次の節）
 /// - 画像の有無にかかわらずファイル削除を呼ぶ。`delete_image_except` は無いファイルを無視するので、
 ///   画像なしの投稿でも害はなく、過去の失敗で残ったファイルがあれば一緒に片付く。
+// ...（省略: TASK-0020 で足したログ用の属性）
 pub async fn delete(State(state): State<AppState>, Path(id): Path<i64>) -> AppResult<Response> {
     // 値は使わず、存在の確認だけ。無ければ 404
     post_repo::find(&state.db, id)
         .await?
         .ok_or(AppError::NotFound)?;
-    remove_image_files(&state, id, None).await;
     post_repo::delete(&state.db, id).await?;
+    remove_image_files(&state, id, None).await;
+    // ...（省略: TASK-0020 で足したログ出力）
     Ok(Redirect::to(DELETED_REDIRECT).into_response())
 }
 ```
@@ -454,10 +459,17 @@ pub async fn delete(State(state): State<AppState>, Path(id): Path<i64>) -> AppRe
 
 タスク文書の例は画像があるときだけファイルを消し、成功後は `/` へ戻していた。プロジェクトは画像の有無を見ずに消し（理由は学習メモのとおり）、`/?notice=deleted` へ戻す。
 
-順番は設計書 `dataflow.md` に合わせた「ファイル → 行」で、ファイルを消せなくても行は消す。統合テスト `delete_removes_the_row_even_if_the_image_cannot_be_removed` は、画像の場所にディレクトリを置いて削除を失敗させ、それでも 303 が返り行が消えることを確かめている。
+順番は「行 → ファイル」で、画像だけの削除と同じく **DB が先、ファイルが後** だ。途中で失敗したときに残る状態を比べる。
+
+- 行 → ファイル: ファイルを消せなければ、誰も参照しないファイルが残る。一覧には出ないので害はない
+- ファイル → 行: `DELETE` が失敗すれば行だけが残り、一覧に壊れた画像が出る
+
+`post` の id は `AUTOINCREMENT` なので、消した id は再び振られない。残ったファイルが別の投稿の画像になることもない。設計書（`api-endpoints.md` と `dataflow.md`）の削除手順も同じ順番だ。
+
+統合テスト `delete_removes_the_row_even_if_the_image_cannot_be_removed` は、画像の場所にディレクトリを置いて削除を失敗させ、それでも 303 が返り行が消えることを確かめている。
 
 :::message
-画像だけの削除は「DB → ファイル」、投稿の削除は「ファイル → DB」で、順番が逆だ。投稿の削除で `DELETE` の SQL そのものが失敗すると、ファイルはもう無く行だけが残る。doc コメントが避けたがっている「行が残ってファイルだけ消える」状態だ。`Remove` と同じ「DB → ファイル」なら、残るのは誰も指さないファイルだけになる。
+タスク文書の手順は「ファイルを消す → `DELETE`」で、プロジェクトとは逆だ。プロジェクトは上の理由で「行 → ファイル」にした。
 :::
 
 ### GET は 405 になる
@@ -722,7 +734,7 @@ passed: 67, failed: 0
 - **保存を先にすると、全部消す `delete_image` では新しいファイルまで消える**: 後片付けに「この拡張子は残す」引数が要り、`delete_image_except` を足した
 - **同じ拡張子の差し替えは、上書きそのものが古い画像を壊しうる**: 順番だけでは守れないので、`save_image` を「`.tmp` に書いて `rename`」に変えた。作成だけのうちは見えなかった問題だ
 - **`Path<i64>` の 400 は HTML のエラーページにならない**: ハンドラより前で axum が弾くので、前回の `AppError` のページは使われず、`text/plain` の文面がそのまま返る
-- **削除と画像だけの削除で、DB とファイルの順番が逆**: 投稿の削除は「ファイル → DB」で、`DELETE` が失敗すると doc コメントが避けたがっている状態になる。今のコードに残っている点として記録しておく
+- **削除の順番は「DB → ファイル」に揃える**: タスク文書の「ファイル → DB」では、`DELETE` が失敗すると行だけ残って壊れた画像が出る。行を先に消せば、残りうるのは誰も参照しないファイルだけで、id は `AUTOINCREMENT` で再利用されない
 
 ## 次回予告
 

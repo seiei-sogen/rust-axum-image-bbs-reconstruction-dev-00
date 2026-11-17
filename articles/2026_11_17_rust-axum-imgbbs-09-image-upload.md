@@ -86,7 +86,7 @@ fn file_name(id: i64, ext: ImageExt) -> String {
 
 `AppState` は保存先を `upload_dir: PathBuf` で持っている（第4回）。`PathBuf` は中身を所有するパスで、`&Path` はそれを借りて見るだけの参照だ。`save_image` は保存先を読むだけなので、引数は `&Path` にした。呼び出し側が `&state.upload_dir`（型は `&PathBuf`）を渡すと、`&Path` に自動で変換される。`PathBuf` が `Deref<Target = Path>` を実装しているからで、これを **参照外し型強制（deref coercion）** と呼ぶ。`&String` を `&str` の引数に渡せるのと同じ仕組みだ。
 
-戻り値は `"5.png"` というファイル名だけで、`uploads/` は付けない。URL の `/uploads/` は、第6回で書いた `index.html` の `<img src="/uploads/{{ path }}">` が付ける。`dataflow.md` の図には「相対パス `uploads/{id}.{ext}` を返す」とあるが、実装は `TASK-0011.md` の「戻り値は `{id}.{ext}` 形式」に合わせた。保存先は `UPLOAD_DIR` で変えられるので、ディレクトリ名を DB に焼き込まないほうが移設に強い。
+戻り値は `"5.png"` というファイル名だけで、`uploads/` は付けない。URL の `/uploads/` は、第6回で書いた `index.html` の `<img src="/uploads/{{ path }}">` が付ける。`TASK-0011.md` にも「戻り値は `{id}.{ext}` 形式」とある。保存先は `UPLOAD_DIR` で変えられるので、ディレクトリ名を DB に焼き込まないほうが移設に強い。
 
 ### `tokio::fs` で待つ理由
 
@@ -295,8 +295,9 @@ pub fn build_app(state: AppState) -> Router {
     let max_body_bytes = state.config.max_image_bytes + MULTIPART_OVERHEAD_BYTES;
     // `/uploads/5.png` → `{upload_dir}/5.png` を返す静的ファイル配信（REQ-013）。
     // ServeDir は `..` を含むパスを拒否するので、upload_dir の外のファイルは読めない。
-    // `clone()` するのは、`state` 本体はこの後 `with_state` へムーブするため。
-    let uploads = ServeDir::new(state.upload_dir.clone());
+    // `ServeDir::new` は `AsRef<Path>`（パスとして借用できる型）を受け取り、内部で自分用の `PathBuf` を作る。
+    // そのため `&state.upload_dir` と借用で渡せば足り、`state` 本体はこの後 `with_state` へムーブできる。
+    let uploads = ServeDir::new(&state.upload_dir);
 
     // ...（TraceLayer の説明コメントは省略）
     Router::new()
@@ -316,9 +317,11 @@ pub fn build_app(state: AppState) -> Router {
 
 `ServeDir` はハンドラ関数ではなく、Tower の `Service` を直接実装した型だ。だから `route(..., get(...))` ではなく、Service を「この URL 以下まるごと」で受け取る `nest_service` で付ける。`/uploads/1.png` なら `/1.png` が届き、`{upload_dir}/1.png` を開く。
 
-### `clone()` について
+### `&state.upload_dir` と借用で渡す理由
 
-`state.upload_dir` をそのまま渡すと、`PathBuf` が `state` から `ServeDir` へムーブされ、最後の `.with_state(state)` が書けなくなる。コメントが言っているのはこのことだ。ただし `tower-http 0.5.2` の `ServeDir::new` は `P: AsRef<Path>` を受け取って中で自分用の `PathBuf` を作るので、`ServeDir::new(&state.upload_dir)` と借用で渡しても `cargo build` は通る（手元で確かめた）。プロジェクトはタスク文書の指定に合わせて `clone()` のままにしている。
+`state.upload_dir` を `&` なしで渡すと、`PathBuf` が `state` から `ServeDir` へムーブされ、最後の `.with_state(state)` が書けなくなる。`state` の一部が抜け出た後は、`state` 全体をもう使えないからだ。
+
+`tower-http 0.5.2` の `ServeDir::new` は `P: AsRef<Path>` を受け取る。`AsRef<Path>` は「`&Path` として借りられる型」を表すトレイトで、`PathBuf` も `&PathBuf` も満たす。`ServeDir::new` はそこから中で自分用の `PathBuf` を作るので、呼び出し側が持ち主を手放す必要はない。だから `&state.upload_dir` と借用で渡せば足りる。`state` は何も失わず、この後 `with_state` へムーブできる。タスク文書のコード例は `clone()` で複製していたが、借用で済むのでプロジェクトは複製をやめた。
 
 ### `ServeDir` が返すもの
 
