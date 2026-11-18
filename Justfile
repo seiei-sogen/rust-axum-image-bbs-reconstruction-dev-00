@@ -45,13 +45,18 @@ fmt:
 fmt-check:
     cargo fmt -- --check
 
-# Lint。警告はエラー扱いにして見逃さないようにする
+# Lint。tests/ も含めて検査し（--all-targets）、警告はエラー扱いにして見逃さないようにする
 lint:
-    cargo clippy -- -D warnings
+    cargo clippy --all-targets -- -D warnings
 
 # 動作確認: サーバが起動している前提で `/` を curl で叩く
 smoke:
     curl -i http://localhost:3000/
+
+# 実サーバを一時 DB で起動し、curl で投稿作成〜削除まで通しで確認する
+# 例: `just e2e` / `just e2e create`（編集・削除を実装する前の段階用）
+e2e upto="all":
+    ./scripts/e2e.sh {{upto}}
 
 # 依存クレートを最新の互換バージョンに更新
 update:

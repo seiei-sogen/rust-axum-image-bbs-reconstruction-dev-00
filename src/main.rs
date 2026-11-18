@@ -1,7 +1,8 @@
 //! rust-axum-image-bbs アプリケーションのエントリポイント。
 //!
-//! このファイルでは axum サーバを 0.0.0.0:3000 で起動し、ルートパス `/` に
-//! GET リクエストが来たら "Hello, axum!" を返すだけの最小構成を実装する。
+//! このファイルは起動処理だけを担当する:
+//! .env 読み込み → ログ初期化 → DB 接続プール → マイグレーション → AppState → listen。
+//! ルーター（URL とハンドラの対応・ミドルウェア）は `src/lib.rs` の `build_app` で組み立てる。
 //!
 //! 学習メモ:
 //! - `#[tokio::main]` マクロは `main()` を tokio の非同期ランタイムでラップする。
@@ -15,8 +16,12 @@
 //! TASK-0002 追加メモ（tracing / TraceLayer）:
 //! - `println!` は手軽だが、本番・テスト・CI でログレベルを制御しにくい。
 //!   `tracing::info!` などを使うと RUST_LOG 環境変数一つでレベル切替ができる。
-//! - `TraceLayer::new_for_http()` を Router にかぶせると、リクエストの開始・終了・
-//!   ステータスコードが自動でログ出力される。ハンドラ側でロギングを書く必要がない。
+//! - TraceLayer の説明は、ルーターと一緒に `src/lib.rs` へ移した。
+//!
+//! TASK-0020 追加メモ（ログの形式）:
+//! - 既定のフィルタを "info" にし、LOG_FORMAT=json で JSON 形式に切り替えられるようにした。
+//! - 投稿の作成・更新・削除のハンドラには `#[tracing::instrument]` で span を付け、`post_id` を載せている
+//!   （`src/handlers/posts.rs`）。
 //!
 //! TASK-0003 追加メモ（SQLite + sqlx 接続とマイグレーション）:
 //! - `SqlitePoolOptions` は接続プール（複数の DB 接続をまとめて管理する仕組み）を構築する。
@@ -28,21 +33,31 @@
 //! - `sqlx::migrate!("./migrations")` はコンパイル時マクロで、指定ディレクトリの SQL ファイルを
 //!   バイナリに埋め込む。`.run(&pool).await?` で起動時に未適用のマイグレーションだけを実行する。
 
-mod config;
-mod state;
-
-use axum::{extract::DefaultBodyLimit, extract::State, routing::get, Router};
-use config::AppConfig;
+// ライブラリクレート（src/lib.rs）の公開 API を使う。
+// パッケージ名の `-` はクレート名では `_` に置き換わる（rust-axum-image-bbs → rust_axum_image_bbs）。
+use rust_axum_image_bbs::{build_app, config::AppConfig, state::AppState};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
-use state::AppState;
+use std::io::IsTerminal; // `stdout().is_terminal()`（出力先が端末かどうか）を使えるようにするトレイト
 use std::path::PathBuf;
 use std::str::FromStr;
-use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // ---------- .env の読み込み ----------
+    //
+    // カレントディレクトリの `.env` を読み、中の `KEY=VALUE` を環境変数として登録する。
+    // この後の RUST_LOG / DATABASE_URL / UPLOAD_DIR / PORT の読み取りより前に呼ぶ必要があるので、
+    // main の一番最初に置いている。
+    //
+    // 学習メモ:
+    // - `dotenv()` は `Result` を返す。`.env` が無いと `Err` になるが、
+    //   本番や Docker では環境変数を直接渡すので、ファイルが無いのは正常な状態。
+    //   `.ok()` で `Result` を `Option` に変換して結果を捨て、「無ければ何もしない」にしている。
+    //   （`Result` を使わずに放置すると、コンパイラが unused の警告を出す）
+    // - すでにシェルで設定されている環境変数は上書きされない。
+    //   `PORT=8080 cargo run` のようにシェルで渡した値が `.env` より優先される。
     dotenvy::dotenv().ok();
 
     // ---------- ロギング初期化 ----------
@@ -50,27 +65,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // tracing-subscriber の fmt（フォーマット出力）サブスクライバを初期化する。
     // with_env_filter により:
     //   - RUST_LOG 環境変数が設定されていればその値を使う（例: RUST_LOG=debug）
-    //   - 未設定の場合は "info,tower_http=debug" をデフォルトとして使う
-    //     → アプリ全体は INFO 以上、tower_http（TraceLayer のログ）は DEBUG 以上を表示
+    //   - 未設定の場合は "info" をデフォルトとして使う
+    //     → INFO 以上を表示。TraceLayer のリクエストごとのログも INFO で出す（src/lib.rs）
+    // 出力の形式:
+    //   - 既定は人間が読む1行テキスト。端末に出すときだけ色を付ける
+    //     （`docker compose logs` などファイルや別プロセスに流すときは、色の制御文字が混ざらない）
+    //   - LOG_FORMAT=json のときは1行1つの JSON（ログ集約ツールに読ませるとき用）
     //
     // 学習メモ:
     // - `EnvFilter::try_from_default_env()` は失敗する可能性があるので Result を返す。
     //   `.unwrap_or_else(|_| ...)` で失敗時のフォールバックを指定している。
     //   これは Rust 的な「エラーハンドリングのパターン」として頻出。
+    // - `std::env::var(...)` は `Result<String, VarError>`。`.as_deref()` で中身を `&str` として借りると、
+    //   `Ok("json")` という値とそのまま `==` で比べられる（未設定なら Err なので false）。
+    // - `if` の両側で `.init()` まで書いているのは、`.json()` を付けると builder の型が変わり、
+    //   1つの変数に入れて後から共通の `.init()` を呼ぶ、という書き方ができないから。
     // - `.init()` を呼ぶまでトレースイベントは何も出力されない。
     //   main の最初に書くのは「ここより前のログが消えないようにするため」。
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info,tower_http=debug")),
-        )
-        .init();
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    if std::env::var("LOG_FORMAT").as_deref() == Ok("json") {
+        tracing_subscriber::fmt()
+            .json()
+            .with_env_filter(filter)
+            .init();
+    } else {
+        tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_ansi(std::io::stdout().is_terminal())
+            .init();
+    }
 
     // ---------- DB 接続プールの構築 ----------
     //
     // DATABASE_URL 環境変数からデータベースのパスを取得する。
     // 環境変数が未設定の場合は "sqlite://data/app.db" をデフォルトとして使う。
-    // .env ファイルから読み込む場合は dotenv クレートを使うが、今回はシンプルに std::env で取得する。
+    // `.env` に書いた値も、冒頭の `dotenvy::dotenv()` によって環境変数として読める状態になっている。
     //
     // 学習メモ:
     // - `std::env::var("DATABASE_URL")` は Ok(String) か Err(VarError) を返す。
@@ -117,7 +146,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //   失敗時は `?` でエラーを伝播する。
     //
     // 型注釈 `SqlitePool` は `sqlx::Pool<sqlx::Sqlite>` のエイリアス。
-    // 次タスク TASK-0004 で `AppState { db_pool: SqlitePool, ... }` として持ち回す予定のため、
+    // この後 `AppState { db: pool, ... }` に入れて各ハンドラへ持ち回すため、
     // ここで型名を見える化しておく（型推論に任せても動くが、学習者向けに明示）。
     let pool: SqlitePool = SqlitePoolOptions::new()
         .max_connections(5)
@@ -137,38 +166,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     sqlx::migrate!("./migrations").run(&pool).await?;
     tracing::info!("migrations applied");
 
+    // ---------- アップロード先ディレクトリ ----------
+    //
+    // 画像の保存先。UPLOAD_DIR 環境変数で上書きでき、未設定なら `uploads/` を使う。
+    //
+    // 学習メモ:
+    // - `PathBuf` は「所有権を持つパス」。`String` に対する `&str` と同じ関係で、
+    //   借用版は `&Path`。AppState に持たせて長く使うので、所有する `PathBuf` にしている。
+    // - `create_dir_all` は途中のディレクトリもまとめて作り、既に存在していても成功する。
+    //   `&upload_dir` と借用で渡しているので、この後も `upload_dir` を使い続けられる。
     let upload_dir =
         PathBuf::from(std::env::var("UPLOAD_DIR").unwrap_or_else(|_| "uploads".to_string()));
     std::fs::create_dir_all(&upload_dir)?;
 
+    // ---------- 共有状態（AppState）の組み立て ----------
+    //
+    // DB 接続プール・アップロード先・設定値を1つの構造体にまとめる。
+    //
+    // 学習メモ:
+    // - `db: pool` で `pool` の所有権が `state` の中へ移動（ムーブ）する。
+    //   この行より後で `pool` という変数は使えなくなる（使うとコンパイルエラー）。
+    // - `upload_dir` と `config` は「フィールド名と変数名が同じなら `名前: 名前` を省略できる」記法。
     let config = AppConfig::from_env_or_default();
-    let max_body_bytes = config.max_image_bytes;
     let state = AppState {
         db: pool,
         upload_dir,
         config,
     };
 
-    // AppState は Router::with_state で各ハンドラへ共有する。
+    // ルーターの組み立て（ルート定義・ミドルウェア・with_state）は lib.rs の build_app に任せる。
+    // `state` の所有権は build_app へムーブされる。
+    let app = build_app(state);
 
-    // ---------- ルーター組み立て ----------
+    // ---------- listen ----------
     //
-    // TraceLayer::new_for_http() は Tower のミドルウェア（Layer）として動作する。
-    // Router に `.layer(...)` で重ねると、すべてのリクエスト/レスポンスが
-    // このレイヤーを通過するたびに tracing スパンが生成されてログが出る。
+    // 0.0.0.0（全インターフェース）で TCP リスナを開く（WSL からホストアクセスする場合に接続しやすい）。
+    // ポートは PORT 環境変数で上書きでき、未設定または数値でない場合は 3000 を使う。
     //
     // 学習メモ:
-    // - axum の `.layer()` は「ミドルウェアを外側から被せる」イメージ。
-    //   複数呼べば複数のレイヤーが積み重なる。
-    // - TraceLayer はリクエスト開始時に INFO ログ、終了時に INFO + ステータスを出す。
-    //   内部の詳細は DEBUG レベルで出るため、tower_http=debug にしておくと見やすい。
-    let app: Router = Router::new()
-        .route("/", get(root_handler))
-        .layer(DefaultBodyLimit::max(max_body_bytes))
-        .layer(TraceLayer::new_for_http())
-        .with_state(state);
-
-    // 0.0.0.0:3000 で TCP リスナを開く（WSL からホストアクセスする場合に接続しやすい）
+    // - `std::env::var` は `Result<String, VarError>`。`.ok()` で `Option<String>` に変換する。
+    // - `.and_then(|value| value.parse().ok())` は「値があれば u16 への変換を試し、
+    //   失敗したら None にする」。`parse()` の変換先は、左辺の型注釈 `u16` から推論される。
+    // - `.unwrap_or(3000)` は None のときの既定値。
     let port: u16 = std::env::var("PORT")
         .ok()
         .and_then(|value| value.parse().ok())
@@ -183,21 +222,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     axum::serve(listener, app).await?;
 
     Ok(())
-}
-
-/// ルート `/` の GET ハンドラ。固定文字列を返すだけのスタブ。
-///
-/// 戻り値は `&'static str`。axum は `IntoResponse` を実装した任意の型を返せるので、
-/// `&'static str` はそのまま `text/plain; charset=utf-8` として返される。
-async fn root_handler(State(state): State<AppState>) -> &'static str {
-    tracing::debug!(
-        db_pool = ?state.db,
-        upload_dir = %state.upload_dir.display(),
-        page_size = state.config.page_size,
-        max_image_bytes = state.config.max_image_bytes,
-        allowed_mime = ?state.config.allowed_mime,
-        "root handler received application state"
-    );
-
-    "Hello, axum!"
 }

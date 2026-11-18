@@ -113,13 +113,27 @@ articles/
 
 #### 進捗
 
-| 記事 | 状態 | ファイル |
-|---|---|---|
-| (01) プロジェクト初期化と Hello, axum! | ✅ 生成済み | [articles/rust-axum-imgbbs-01-init.md](../../../../articles/rust-axum-imgbbs-01-init.md) |
-| (02) tracing で構造化ログを入れる | 未生成 | - |
-| (03) sqlx + SQLite マイグレーション | 未生成 | - |
-| (04) AppState / AppConfig と環境変数 | 未生成 | - |
-| 以降... | 未生成 | - |
+実際の連載は、当初案（1タスク1記事で20本 + フェーズまとめ5本）から **1記事1トピックの全13本** に組み替えた。
+複数のタスクが1つの話題になるところ（一覧表示、投稿作成、編集と削除など）は1本にまとめている。
+(1)〜(3) は Zenn で公開済み、(4)〜(13) は `articles/` に `published: false` の下書きとして置いてある。
+ファイル名は公開済みの記事に合わせて `{日付}_rust-axum-imgbbs-{番号}-{slug}.md` とした。
+フェーズまとめ記事（5本）は未着手。
+
+| 記事 | 対応タスク | 状態 | ファイル |
+|---|---|---|---|
+| (1) プロジェクト初期化と Hello, axum! | TASK-0001 | ✅ 公開済み | [Zenn](https://zenn.dev/purenium/articles/2026_05_22_rust-axum-imgbbs-01-init) |
+| (2) tracing と TraceLayer で開発体験を整える | TASK-0002 | ✅ 公開済み | [Zenn](https://zenn.dev/purenium/articles/2026_05_23_rust-axum-imgbbs-02-tracing) |
+| (3) SQLite + sqlx 接続とマイグレーション | TASK-0003 | ✅ 公開済み | [Zenn](https://zenn.dev/purenium/articles/2026_05_25_rust-axum-imgbbs-03-sqlx-migration) |
+| (4) AppConfig / AppState と環境変数読み込み | TASK-0004 | 📝 下書き | [04-appstate](../../../../articles/2026_11_17_rust-axum-imgbbs-04-appstate.md) |
+| (5) Post モデルとリポジトリ層を sqlx で書く | TASK-0005 | 📝 下書き | [05-post-repository](../../../../articles/2026_11_17_rust-axum-imgbbs-05-post-repository.md) |
+| (6) Askama で投稿一覧を表示する | TASK-0006, 0007 | 📝 下書き | [06-askama-list](../../../../articles/2026_11_17_rust-axum-imgbbs-06-askama-list.md) |
+| (7) ページネーションを実装する | TASK-0008 | 📝 下書き | [07-pagination](../../../../articles/2026_11_17_rust-axum-imgbbs-07-pagination.md) |
+| (8) バリデーションと multipart での投稿作成 | TASK-0009, 0010 | 📝 下書き | [08-validation-create](../../../../articles/2026_11_17_rust-axum-imgbbs-08-validation-create.md) |
+| (9) 画像アップロードとロールバック | TASK-0011 | 📝 下書き | [09-image-upload](../../../../articles/2026_11_17_rust-axum-imgbbs-09-image-upload.md) |
+| (10) AppError と IntoResponse でエラー処理をまとめる | TASK-0012 | 📝 下書き | [10-app-error](../../../../articles/2026_11_17_rust-axum-imgbbs-10-app-error.md) |
+| (11) 編集と削除で CRUD を完成させる | TASK-0013〜0016 | 📝 下書き | [11-edit-delete](../../../../articles/2026_11_17_rust-axum-imgbbs-11-edit-delete.md) |
+| (12) 統合テストで主要シナリオを固める | TASK-0017, 0018 | 📝 下書き | [12-integration-test](../../../../articles/2026_11_17_rust-axum-imgbbs-12-integration-test.md) |
+| (13) Docker と README で配布できる形にする | TASK-0019, 0020 | 📝 下書き | [13-docker-readme](../../../../articles/2026_11_17_rust-axum-imgbbs-13-docker-readme.md) |
 
 ---
 
@@ -130,10 +144,10 @@ articles/
 > ゴール: axum サーバが立ち上がり、構造化ログ・DB・AppState が動く骨組み完成。
 > このフェーズ完了で「Rust の Web 開発はこういう感じか」が掴めるところまで。
 
-- [ ] [TASK-0001](TASK-0001.md): プロジェクト初期化と axum 最小起動 — DIRECT, 4h
+- [x] [TASK-0001](TASK-0001.md): プロジェクト初期化と axum 最小起動 — DIRECT, 4h ✅ 完了 (2026-05-22)
 - [x] [TASK-0002](TASK-0002.md): tracing + tower-http TraceLayer 導入 — DIRECT, 4h ✅ 完了 (2026-05-23)
-- [ ] [TASK-0003](TASK-0003.md): SQLite + sqlx 接続とマイグレーション — DIRECT, 4h
-- [ ] [TASK-0004](TASK-0004.md): AppConfig / AppState 設計と環境変数読み込み — DIRECT, 4h
+- [x] [TASK-0003](TASK-0003.md): SQLite + sqlx 接続とマイグレーション — DIRECT, 4h ✅ 完了 (2026-05-25)
+- [x] [TASK-0004](TASK-0004.md): AppConfig / AppState 設計と環境変数読み込み — DIRECT, 4h ✅ 完了 (2026-06-12)
 
 📝 **Phase 1a 完了時に書くまとめ記事**: 「まとめ① プロジェクト基盤を組み立てる」
 
@@ -142,10 +156,10 @@ articles/
 > ゴール: DB から取得した投稿を、Askama テンプレートで一覧表示できる。
 > ページング付き。
 
-- [ ] [TASK-0005](TASK-0005.md): Post モデルと Repository(list/count/find) 実装 — TDD, 4h
-- [ ] [TASK-0006](TASK-0006.md): Askama base.html + index.html 雛形 — DIRECT, 4h
-- [ ] [TASK-0007](TASK-0007.md): GET / 投稿一覧表示 — TDD, 4h
-- [ ] [TASK-0008](TASK-0008.md): ページネーション実装 — TDD, 4h
+- [x] [TASK-0005](TASK-0005.md): Post モデルと Repository(list/count/find) 実装 — TDD, 4h ✅ 完了 (2026-11-17)
+- [x] [TASK-0006](TASK-0006.md): Askama base.html + index.html 雛形 — DIRECT, 4h ✅ 完了 (2026-11-17)
+- [x] [TASK-0007](TASK-0007.md): GET / 投稿一覧表示 — TDD, 4h ✅ 完了 (2026-11-17)
+- [x] [TASK-0008](TASK-0008.md): ページネーション実装 — TDD, 4h ✅ 完了 (2026-11-17)
 
 📝 **Phase 1b 完了時に書くまとめ記事**: 「まとめ② SQLite と Askama で一覧表示を実装する」
 
@@ -154,10 +168,10 @@ articles/
 > ゴール: 画像付き投稿ができ、バリデーション・ロールバック・共通エラーが整う。
 > Rust の `Result` / `?` / `thiserror` の活用が一通り体験できる山場。
 
-- [ ] [TASK-0009](TASK-0009.md): バリデータと ImageExt 型 — TDD, 4h
-- [ ] [TASK-0010](TASK-0010.md): POST /posts 投稿作成（画像なし版） — TDD, 4h
-- [ ] [TASK-0011](TASK-0011.md): 画像アップロード + ImageStore + ロールバック — TDD, 4h
-- [ ] [TASK-0012](TASK-0012.md): AppError + IntoResponse 実装 — TDD, 4h
+- [x] [TASK-0009](TASK-0009.md): バリデータと ImageExt 型 — TDD, 4h ✅ 完了 (2026-11-17)
+- [x] [TASK-0010](TASK-0010.md): POST /posts 投稿作成（画像なし版） — TDD, 4h ✅ 完了 (2026-11-17)
+- [x] [TASK-0011](TASK-0011.md): 画像アップロード + ImageStore + ロールバック — TDD, 4h ✅ 完了 (2026-11-17)
+- [x] [TASK-0012](TASK-0012.md): AppError + IntoResponse 実装 — TDD, 4h ✅ 完了 (2026-11-17)
 
 📝 **Phase 1c 完了時に書くまとめ記事**: 「まとめ③ 画像アップロードとエラー処理を整える」
 
@@ -165,10 +179,10 @@ articles/
 
 > ゴール: CRUD のうち U / D を完成させ、画像掲示板として一通り使える状態に。
 
-- [ ] [TASK-0013](TASK-0013.md): GET /posts/:id/edit 編集画面表示 — TDD, 4h
-- [ ] [TASK-0014](TASK-0014.md): POST /posts/:id/edit 編集処理 — TDD, 4h
-- [ ] [TASK-0015](TASK-0015.md): 画像のみ削除（delete_image チェックボックス）対応 — TDD, 4h
-- [ ] [TASK-0016](TASK-0016.md): POST /posts/:id/delete 削除処理 — TDD, 4h
+- [x] [TASK-0013](TASK-0013.md): GET /posts/:id/edit 編集画面表示 — TDD, 4h ✅ 完了 (2026-11-17)
+- [x] [TASK-0014](TASK-0014.md): POST /posts/:id/edit 編集処理 — TDD, 4h ✅ 完了 (2026-11-17)
+- [x] [TASK-0015](TASK-0015.md): 画像のみ削除（delete_image チェックボックス）対応 — TDD, 4h ✅ 完了 (2026-11-17)
+- [x] [TASK-0016](TASK-0016.md): POST /posts/:id/delete 削除処理 — TDD, 4h ✅ 完了 (2026-11-17)
 
 📝 **Phase 2 完了時に書くまとめ記事**: 「まとめ④ 編集と削除で CRUD を完成させる」
 
@@ -176,10 +190,10 @@ articles/
 
 > ゴール: 統合テスト・Docker 化・README 整備により、読者が手元で再現できる完成形に。
 
-- [ ] [TASK-0017](TASK-0017.md): 統合テスト基盤整備 — TDD, 4h
-- [ ] [TASK-0018](TASK-0018.md): 主要機能の統合テスト追加 — TDD, 4h
-- [ ] [TASK-0019](TASK-0019.md): Dockerfile + docker-compose.yml — DIRECT, 4h
-- [ ] [TASK-0020](TASK-0020.md): tracing 構造化ログ仕上げ + README 整備 — DIRECT, 4h
+- [x] [TASK-0017](TASK-0017.md): 統合テスト基盤整備 — TDD, 4h ✅ 完了 (2026-11-17)
+- [x] [TASK-0018](TASK-0018.md): 主要機能の統合テスト追加 — TDD, 4h ✅ 完了 (2026-11-17)
+- [x] [TASK-0019](TASK-0019.md): Dockerfile + docker-compose.yml — DIRECT, 4h ✅ 完了 (2026-11-17)
+- [x] [TASK-0020](TASK-0020.md): tracing 構造化ログ仕上げ + README 整備 — DIRECT, 4h ✅ 完了 (2026-11-17)
 
 📝 **Phase 3 完了時に書くまとめ記事**: 「まとめ⑤ 統合テスト・Docker・READMEで配布できるようにする」
 

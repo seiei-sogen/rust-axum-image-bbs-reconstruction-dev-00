@@ -1,0 +1,9 @@
+# docker build に送るファイル（ビルドコンテキスト）を、ビルドに要るものだけに絞る。
+# いったん全部を除外し、`!` で必要なものだけ戻す。
+# target/（数 GB になる）、.git/、.env（秘密情報が入りうる）、data/、uploads/ などはイメージに入らない。
+*
+!Cargo.toml
+!Cargo.lock
+!src/
+!migrations/
+!templates/

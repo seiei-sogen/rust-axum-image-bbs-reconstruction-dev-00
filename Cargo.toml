@@ -6,7 +6,8 @@ description = "旧PHP画像掲示板を Rust + axum で再実装する学習用�
 
 [dependencies]
 # axum 本体（HTTP ルーティング・ハンドラ・抽出器を提供する Web フレームワーク）
-axum = "0.7"
+#   features = ["multipart"] で、ファイル付きフォーム（multipart/form-data）を読む `Multipart` 抽出器が使える。
+axum = { version = "0.7", features = ["multipart"] }
 # tokio：axum が依存する非同期ランタイム。"full" は学習用に主要機能を一括有効化
 tokio = { version = "1", features = ["full"] }
 # tracing：Rust 標準的な構造化ログ・トレーシングファサード。
@@ -15,11 +16,13 @@ tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 # tracing-subscriber：tracing イベントを実際に出力する「subscriber」の実装集。
 #   features = ["env-filter"] を有効にすると RUST_LOG 環境変数でレベルを動的に切り替えられる。
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+#   features = ["json"] で、ログを1行1つの JSON で出す形式（LOG_FORMAT=json）が使える。
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # tower-http：Tower ミドルウェアの HTTP 特化実装集。
 #   features = ["trace"] で TraceLayer が使えるようになり、
 #   axum の Router に .layer() で差し込むだけでリクエスト/レスポンスを自動ログ出力できる。
-tower-http = { version = "0.5", features = ["trace"] }
+#   features = ["fs"] で ServeDir が使えるようになり、アップロード画像のディレクトリをそのまま配信できる。
+tower-http = { version = "0.5", features = ["trace", "fs"] }
 # sqlx：Rust 向けの非同期対応 SQL クライアントライブラリ。
 #   マクロを使えばクエリをコンパイル時に検証できる（今回は実行時クエリとして使用）。
 #   有効にする features の意味:
@@ -37,3 +40,32 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # dotenvy：ローカル開発用の .env を起動時に読み込む。
 dotenvy = "0.15"
+# askama：Jinja 風の HTML テンプレートを「コンパイル時に」Rust コードへ変換するテンプレートエンジン。
+#   テンプレートの構文ミスや存在しない変数の参照は cargo build の時点でエラーになる。
+#   拡張子 .html のテンプレートは自動で HTML エスケープされる（XSS 対策）。
+askama = "0.12"
+# askama_axum：Askama のテンプレート構造体に axum の IntoResponse を実装させる連携クレート。
+#   これを入れると、ハンドラはテンプレート構造体をそのまま return するだけで HTML を返せる。
+askama_axum = "0.4"
+# serde：Rust の構造体と外部データ（クエリ文字列・JSON など）を相互変換する定番クレート。
+#   features = ["derive"] で `#[derive(Deserialize)]` が使えるようになり、
+#   axum の `Query<T>` が `?page=2` を構造体 T に変換するときに使われる。
+serde = { version = "1", features = ["derive"] }
+# infer：ファイル先頭のバイト列（マジックナンバー）から形式を判定するクレート。
+#   PNG なら必ず `89 50 4E 47`、JPEG なら `FF D8 FF` で始まる、という決まりを使う。
+#   クライアントが申告するファイル名や Content-Type は簡単に偽装できるので、画像形式はこれで判定する（NFR-102）。
+infer = "0.16"
+# thiserror：エラー型の定型コード（Display / std::error::Error / From の実装）を derive で自動生成する。
+#   `#[error("...")]` で表示文、`#[from]` で `?` 用の From 変換が作られる。
+thiserror = "1"
+# anyhow：どんなエラーでも1つの型 `anyhow::Error` に包めるクレート。
+#   AppError::Other に入れて、専用のバリアントを作るまでもない想定外のエラーの受け皿にする。
+anyhow = "1"
+
+# dev-dependencies はテスト（cargo test）のときだけ使うクレート。本番バイナリには含まれない。
+[dev-dependencies]
+# tower：`ServiceExt::oneshot` で、サーバを listen せずにルーターへ直接リクエストを1回投げるために使う。
+#   axum 0.7.9 自身が依存している tower 0.5 に揃えて、同じクレートを二重にビルドしないようにする。
+tower = { version = "0.5", features = ["util"] }
+# tempfile：テストごとに使い捨ての一時ディレクトリ（UPLOAD_DIR 用）を作る。drop 時に自動で削除される。
+tempfile = "3"
